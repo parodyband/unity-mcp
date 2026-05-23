@@ -16,7 +16,7 @@ https://github.com/parodyband/unity-mcp.git?path=/Packages/com.strangeape.open-u
 ```
 
 5. Click `Add`.
-6. After Unity imports the package, start it from `Tools > Open Unity MCP > Start Server`.
+6. After Unity imports the package, open `Tools > Open Unity MCP > Status` and click **Start**.
 
 Requires Unity 6 or newer.
 
@@ -40,15 +40,15 @@ http://127.0.0.1:8080/mcp
 
 The server implements the Streamable HTTP subset needed by MCP clients: one local endpoint, JSON-RPC requests over HTTP POST, JSON responses, and no external process. It binds to `127.0.0.1` and rejects non-local browser origins.
 
+Unity also shows a Scene View toolbar badge for server status and quick start/stop access.
+
 ## Client Auto Setup
 
-After installing the package, configure common local clients from the Unity editor:
+After installing the package, open `Tools > Open Unity MCP > Status` and use the **Client Setup** buttons to configure common local clients. You can also use the matching commands under `Tools > Open Unity MCP > Setup`.
 
-```text
-Tools > Open Unity MCP > Setup > Claude Code Project
-Tools > Open Unity MCP > Setup > Codex User Config
-Tools > Open Unity MCP > Setup > Claude Desktop Bridge
-```
+- **Setup Claude Code** - writes `.mcp.json` in the project root
+- **Setup Codex** - writes `~/.codex/config.toml`
+- **Setup Claude Desktop Bridge** - writes `claude_desktop_config.json` with an `mcp-remote` stdio bridge
 
 Claude Code and Codex connect directly to `http://127.0.0.1:8080/mcp`. Claude Desktop uses a local `mcp-remote` stdio bridge because its local MCP config starts process-based servers.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Added a Scene View toolbar badge for server status and quick start/stop access.
+- Added client setup helpers for Claude Code, Codex, and Claude Desktop.
+- Restored full `Tools > Open Unity MCP` menu commands alongside the toolbar badge.
+
 ## 0.1.0
 
 - Initial in-editor Streamable HTTP MCP server.
@@ -11,4 +17,3 @@
 - Added MCP resources and prompts for project context, docs, Unity task guidance, and code review guidance.
 - Added compilation status, project validation, script compilation request, build settings, and restricted player build tools.
 - Added editor menu controls and package documentation.
-- Added editor setup actions for Claude Code, Codex, and Claude Desktop client configs.

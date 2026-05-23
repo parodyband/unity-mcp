@@ -1,9 +1,9 @@
 # Client Setup
 
-Start the server in Unity:
+Open the MCP window in Unity and click **Start**:
 
 ```text
-Tools > Open Unity MCP > Start Server
+Tools > Open Unity MCP > Status
 ```
 
 Default endpoint:
@@ -12,17 +12,15 @@ Default endpoint:
 http://127.0.0.1:8080/mcp
 ```
 
+The Scene View toolbar badge also shows server status and provides quick start/stop access.
+
 ## Auto Setup
 
-Open Unity MCP can update common local client config files from the Unity editor:
+The same window has **Client Setup** buttons that update common local client config files. You can also use the matching setup commands under `Tools > Open Unity MCP > Setup`.
 
-```text
-Tools > Open Unity MCP > Setup > Claude Code Project
-Tools > Open Unity MCP > Setup > Codex User Config
-Tools > Open Unity MCP > Setup > Claude Desktop Bridge
-```
-
-The same actions are available in `Tools > Open Unity MCP > Status`.
+- **Setup Claude Code**
+- **Setup Codex**
+- **Setup Claude Desktop Bridge**
 
 These actions merge an `open-unity-mcp` server entry into the target config and keep unrelated servers intact. Restart the client after setup.
 

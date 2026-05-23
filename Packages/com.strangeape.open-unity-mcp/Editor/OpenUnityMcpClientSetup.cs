@@ -15,7 +15,7 @@ namespace StrangeApe.OpenUnityMcp
         private const string ClaudeDesktopBridgePackage = "mcp-remote@latest";
         private const string NewLine = "\r\n";
 
-        [MenuItem("Tools/Open Unity MCP/Setup/Claude Code Project")]
+        [MenuItem("Tools/Open Unity MCP/Setup/Claude Code Project", false, 60)]
         public static void InstallClaudeCodeProjectConfigMenu()
         {
             InstallWithDialog(
@@ -24,7 +24,7 @@ namespace StrangeApe.OpenUnityMcp
                 "Restart Claude Code, or run /mcp in an active session to check the connection.");
         }
 
-        [MenuItem("Tools/Open Unity MCP/Setup/Codex User Config")]
+        [MenuItem("Tools/Open Unity MCP/Setup/Codex User Config", false, 61)]
         public static void InstallCodexConfigMenu()
         {
             InstallWithDialog(
@@ -33,7 +33,7 @@ namespace StrangeApe.OpenUnityMcp
                 "Restart Codex, then run codex mcp list to check the connection.");
         }
 
-        [MenuItem("Tools/Open Unity MCP/Setup/Claude Desktop Bridge")]
+        [MenuItem("Tools/Open Unity MCP/Setup/Claude Desktop Bridge", false, 62)]
         public static void InstallClaudeDesktopConfigMenu()
         {
             if (!EditorUtility.DisplayDialog(

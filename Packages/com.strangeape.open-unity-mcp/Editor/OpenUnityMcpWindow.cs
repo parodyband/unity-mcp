@@ -7,13 +7,13 @@ namespace StrangeApe.OpenUnityMcp
     {
         private int _port;
 
-        [MenuItem("Tools/Open Unity MCP/Status")]
+        [MenuItem("Tools/Open Unity MCP/Status", false, 0)]
         public static void Open()
         {
             GetWindow<OpenUnityMcpWindow>("Open Unity MCP");
         }
 
-        [MenuItem("Tools/Open Unity MCP/Start Server")]
+        [MenuItem("Tools/Open Unity MCP/Start Server", false, 20)]
         public static void StartServer()
         {
             OpenUnityMcpServer.Start(OpenUnityMcpSettings.Port);
@@ -25,7 +25,7 @@ namespace StrangeApe.OpenUnityMcp
             return !OpenUnityMcpServer.IsRunning;
         }
 
-        [MenuItem("Tools/Open Unity MCP/Stop Server")]
+        [MenuItem("Tools/Open Unity MCP/Stop Server", false, 21)]
         public static void StopServer()
         {
             OpenUnityMcpServer.Stop();
@@ -37,7 +37,7 @@ namespace StrangeApe.OpenUnityMcp
             return OpenUnityMcpServer.IsRunning;
         }
 
-        [MenuItem("Tools/Open Unity MCP/Auto Start")]
+        [MenuItem("Tools/Open Unity MCP/Auto Start", false, 40)]
         public static void ToggleAutoStart()
         {
             OpenUnityMcpSettings.AutoStart = !OpenUnityMcpSettings.AutoStart;
@@ -58,8 +58,8 @@ namespace StrangeApe.OpenUnityMcp
 
         private void OnGUI()
         {
-            EditorGUILayout.LabelField("Status", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField(OpenUnityMcpServer.IsRunning ? "Running" : "Stopped");
+            EditorGUILayout.LabelField("Server", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Status", OpenUnityMcpServer.IsRunning ? "Running" : "Stopped");
 
             using (new EditorGUI.DisabledScope(OpenUnityMcpServer.IsRunning))
             {
