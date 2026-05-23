@@ -2,6 +2,21 @@
 
 Open Unity MCP runs a local MCP server inside the Unity 6+ Editor. It exposes a small set of project and asset tools over Streamable HTTP without a separate executable or paid relay.
 
+## Install
+
+Open your Unity 6+ project, then install the package through Unity Package Manager:
+
+1. Open `Window > Package Manager`.
+2. Click the `+` button in the top-left corner.
+3. Choose `Add package from git URL...`.
+4. Paste this URL:
+
+```text
+https://github.com/parodyband/unity-mcp.git?path=/Packages/com.strangeape.open-unity-mcp
+```
+
+5. Click `Add`.
+
 ## Start
 
 Use:

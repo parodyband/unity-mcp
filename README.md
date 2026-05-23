@@ -2,9 +2,25 @@
 
 Open Unity MCP is a small Unity 6+ Editor package that runs a Model Context Protocol server inside the Unity editor. It is designed to be installed as a Unity Package Manager Git dependency and does not require a separate relay executable.
 
-## Install From Git
+## Install With Package Manager
 
-When this project is published to Git, install the package with:
+Open your Unity 6+ project, then install the package through Unity Package Manager:
+
+1. Open `Window > Package Manager`.
+2. Click the `+` button in the top-left corner.
+3. Choose `Add package from git URL...`.
+4. Paste this URL:
+
+```text
+https://github.com/parodyband/unity-mcp.git?path=/Packages/com.strangeape.open-unity-mcp
+```
+
+5. Click `Add`.
+6. After Unity imports the package, start it from `Tools > Open Unity MCP > Start Server`.
+
+Requires Unity 6 or newer.
+
+If you prefer editing `Packages/manifest.json` directly, add this dependency:
 
 ```json
 {
@@ -13,10 +29,6 @@ When this project is published to Git, install the package with:
   }
 }
 ```
-
-Then open Unity and use `Tools > Open Unity MCP > Start Server`.
-
-Requires Unity 6 or newer.
 
 ## MCP Endpoint
 
