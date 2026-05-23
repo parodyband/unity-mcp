@@ -54,33 +54,118 @@ namespace StrangeApe.OpenUnityMcp
         public static void DrawClientSetupGui()
         {
             EditorGUILayout.LabelField("Client Setup", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Claude Code", ProjectRelativeClaudeCodeConfigPath);
-            EditorGUILayout.LabelField("Codex", CodexConfigPath);
-            var claudeDesktopPaths = ClaudeDesktopConfigPaths;
-            for (var i = 0; i < claudeDesktopPaths.Count; i++)
-            {
-                EditorGUILayout.LabelField(i == 0 ? "Claude Desktop" : "Claude Desktop Alt", claudeDesktopPaths[i]);
-            }
 
+            DrawClientBlock(
+                "Claude Code",
+                "HTTP - .mcp.json in project root",
+                new[] { ProjectRelativeClaudeCodeConfigPath },
+                "Setup Claude Code",
+                InstallClaudeCodeProjectConfigMenu);
+
+            DrawClientBlock(
+                "Codex",
+                "HTTP - user config.toml",
+                new[] { CodexConfigPath },
+                "Setup Codex",
+                InstallCodexConfigMenu);
+
+            var claudeDesktopPaths = ClaudeDesktopConfigPaths;
+            DrawClientBlock(
+                "Claude Desktop",
+                "stdio bridge via npx mcp-remote (requires Node.js)",
+                claudeDesktopPaths.ToArray(),
+                "Setup Claude Desktop Bridge",
+                InstallClaudeDesktopConfigMenu);
+
+            EditorGUILayout.Space();
+            DrawCustomClientBlock();
+        }
+
+        private static void DrawClientBlock(string title, string subtitle, string[] paths, string buttonLabel, Action onClick)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
+                if (!string.IsNullOrEmpty(subtitle))
+                {
+                    EditorGUILayout.LabelField(subtitle, EditorStyles.miniLabel);
+                }
+
+                for (var i = 0; i < paths.Length; i++)
+                {
+                    EditorGUILayout.SelectableLabel(paths[i], EditorStyles.textField, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                }
+
+                if (GUILayout.Button(buttonLabel))
+                {
+                    onClick();
+                }
+            }
+        }
+
+        private static void DrawCustomClientBlock()
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                EditorGUILayout.LabelField("Custom MCP Client", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField("Point any MCP client at the endpoint below, or wrap it with the stdio bridge command for clients that only launch processes.", EditorStyles.wordWrappedMiniLabel);
+
+                var endpoint = OpenUnityMcpSettings.Endpoint;
+                DrawCopyableRow("HTTP URL", endpoint);
+
+                var bridgeCommand = "npx -y " + ClaudeDesktopBridgePackage + " --http " + endpoint + " --allow-http";
+                DrawCopyableRow("Stdio bridge", bridgeCommand);
+
+                using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(ClientSetupDocPath)))
+                {
+                    if (GUILayout.Button("Open client-setup.md"))
+                    {
+                        OpenClientSetupDoc();
+                    }
+                }
+            }
+        }
+
+        private static void DrawCopyableRow(string label, string value)
+        {
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Setup Claude Code"))
+                EditorGUILayout.LabelField(label, GUILayout.Width(90f));
+                EditorGUILayout.SelectableLabel(value, EditorStyles.textField, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                if (GUILayout.Button("Copy", GUILayout.Width(60f)))
                 {
-                    InstallClaudeCodeProjectConfigMenu();
-                }
-
-                if (GUILayout.Button("Setup Codex"))
-                {
-                    InstallCodexConfigMenu();
+                    EditorGUIUtility.systemCopyBuffer = value;
                 }
             }
+        }
 
-            if (GUILayout.Button("Setup Claude Desktop Bridge"))
+        private static void OpenClientSetupDoc()
+        {
+            var path = ClientSetupDocPath;
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
-                InstallClaudeDesktopConfigMenu();
+                EditorUtility.DisplayDialog(
+                    "Open Unity MCP",
+                    "Could not locate client-setup.md in the package's Documentation~ folder.",
+                    "OK");
+                return;
             }
 
-            EditorGUILayout.HelpBox("Claude Desktop uses a stdio bridge because its local MCP config starts processes. Codex and Claude Code connect to the HTTP endpoint directly.", MessageType.Info);
+            Application.OpenURL(new Uri(path).AbsoluteUri);
+        }
+
+        private static string ClientSetupDocPath
+        {
+            get
+            {
+                var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(OpenUnityMcpClientSetup).Assembly);
+                if (package == null || string.IsNullOrEmpty(package.resolvedPath))
+                {
+                    return null;
+                }
+
+                return Path.Combine(package.resolvedPath, "Documentation~", "client-setup.md");
+            }
         }
 
         internal static string ProjectRoot => Path.GetFullPath(Path.Combine(Application.dataPath, ".."));

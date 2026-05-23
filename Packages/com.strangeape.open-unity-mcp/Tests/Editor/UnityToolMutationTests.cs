@@ -30,8 +30,13 @@ namespace StrangeApe.OpenUnityMcp.Tests
                 }
             }
 
-            foreach (var gameObject in Object.FindObjectsByType<GameObject>())
+            foreach (var gameObject in Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None))
             {
+                if (gameObject == null)
+                {
+                    continue;
+                }
+
                 if (gameObject.name.StartsWith("OpenUnityMcp", System.StringComparison.Ordinal))
                 {
                     Object.DestroyImmediate(gameObject);
