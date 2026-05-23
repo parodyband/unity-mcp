@@ -39,12 +39,24 @@ Tools > Open Unity MCP > Auto Start
 
 ## Client Config
 
-For clients that accept an HTTP MCP endpoint:
+Use editor actions to configure common local clients:
+
+```text
+Tools > Open Unity MCP > Setup > Claude Code Project
+Tools > Open Unity MCP > Setup > Codex User Config
+Tools > Open Unity MCP > Setup > Claude Desktop Bridge
+```
+
+Claude Code and Codex connect directly to the HTTP endpoint. Claude Desktop is configured through a local `mcp-remote` stdio bridge because its local MCP config starts processes.
+
+For clients that accept an HTTP MCP endpoint manually:
 
 ```toml
 [mcp_servers.unity]
 url = "http://127.0.0.1:8080/mcp"
 ```
+
+See `Documentation~/client-setup.md` for Claude Code, Codex, and Claude Desktop config details.
 
 ## Tools
 

@@ -11,3 +11,4 @@
 - Added MCP resources and prompts for project context, docs, Unity task guidance, and code review guidance.
 - Added compilation status, project validation, script compilation request, build settings, and restricted player build tools.
 - Added editor menu controls and package documentation.
+- Added editor setup actions for Claude Code, Codex, and Claude Desktop client configs.

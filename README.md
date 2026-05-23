@@ -40,6 +40,20 @@ http://127.0.0.1:8080/mcp
 
 The server implements the Streamable HTTP subset needed by MCP clients: one local endpoint, JSON-RPC requests over HTTP POST, JSON responses, and no external process. It binds to `127.0.0.1` and rejects non-local browser origins.
 
+## Client Auto Setup
+
+After installing the package, configure common local clients from the Unity editor:
+
+```text
+Tools > Open Unity MCP > Setup > Claude Code Project
+Tools > Open Unity MCP > Setup > Codex User Config
+Tools > Open Unity MCP > Setup > Claude Desktop Bridge
+```
+
+Claude Code and Codex connect directly to `http://127.0.0.1:8080/mcp`. Claude Desktop uses a local `mcp-remote` stdio bridge because its local MCP config starts process-based servers.
+
+See `Packages/com.strangeape.open-unity-mcp/Documentation~/client-setup.md`.
+
 ## Tool Coverage
 
 The package currently includes tools for:

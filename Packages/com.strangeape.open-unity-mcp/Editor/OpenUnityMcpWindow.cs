@@ -100,8 +100,10 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             EditorGUILayout.Space();
+            OpenUnityMcpClientSetup.DrawClientSetupGui();
+            EditorGUILayout.Space();
+
             EditorGUILayout.HelpBox("The server binds to 127.0.0.1 only. Configure your MCP client to use the endpoint above.", MessageType.Info);
         }
     }
 }
-

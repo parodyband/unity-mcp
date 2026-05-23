@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "unity": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "--http",
+        "http://127.0.0.1:8080/mcp",
+        "--allow-http"
+      ]
+    }
+  }
+}
