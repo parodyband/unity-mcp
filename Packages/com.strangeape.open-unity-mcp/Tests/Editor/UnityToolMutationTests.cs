@@ -1,0 +1,162 @@
+using System.IO;
+using NUnit.Framework;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+namespace StrangeApe.OpenUnityMcp.Tests
+{
+    public sealed class UnityToolMutationTests
+    {
+        private const string GeneratedFolder = "Assets/OpenUnityMcpGenerated";
+
+        [TearDown]
+        public void TearDown()
+        {
+            for (var i = SceneManager.sceneCount - 1; i >= 0; i--)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+                if (scene.path.StartsWith(GeneratedFolder + "/", System.StringComparison.Ordinal))
+                {
+                    if (SceneManager.sceneCount == 1)
+                    {
+                        EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                    }
+                    else
+                    {
+                        EditorSceneManager.CloseScene(scene, true);
+                    }
+                }
+            }
+
+            foreach (var gameObject in Object.FindObjectsByType<GameObject>())
+            {
+                if (gameObject.name.StartsWith("OpenUnityMcp", System.StringComparison.Ordinal))
+                {
+                    Object.DestroyImmediate(gameObject);
+                }
+            }
+
+            if (AssetDatabase.IsValidFolder(GeneratedFolder))
+            {
+                AssetDatabase.DeleteAsset(GeneratedFolder);
+            }
+        }
+
+        [Test]
+        public void ComponentToolsAddComponentAndSetSerializedProperty()
+        {
+            var gameObject = new GameObject("OpenUnityMcpComponentTarget");
+            var objectId = UnityMcpObjectUtility.GetObjectId(gameObject);
+            var addResponse = CallTool("unity.add_component", "\"objectId\":\"" + objectId + "\",\"componentType\":\"UnityEngine.BoxCollider\"");
+
+            StringAssert.Contains("UnityEngine.BoxCollider", ExtractToolText(addResponse));
+            Assert.NotNull(gameObject.GetComponent<BoxCollider>());
+
+            var setResponse = CallTool("unity.set_serialized_property", "\"objectId\":\"" + objectId + "\",\"propertyPath\":\"m_Name\",\"value\":\"OpenUnityMcpRenamed\"");
+
+            StringAssert.Contains("\"changed\":true", ExtractToolText(setResponse));
+            Assert.AreEqual("OpenUnityMcpRenamed", gameObject.name);
+
+            var propertiesResponse = CallTool("unity.get_serialized_properties", "\"objectId\":\"" + objectId + "\",\"limit\":20");
+            StringAssert.Contains("\"properties\"", ExtractToolText(propertiesResponse));
+        }
+
+        [Test]
+        public void PrefabToolsSaveInspectAndInstantiatePrefab()
+        {
+            var source = new GameObject("OpenUnityMcpPrefabSource");
+            source.AddComponent<BoxCollider>();
+            var prefabPath = GeneratedFolder + "/Generated.prefab";
+
+            var saveResponse = CallTool("unity.save_as_prefab_asset", "\"objectId\":\"" + UnityMcpObjectUtility.GetObjectId(source) + "\",\"path\":\"" + prefabPath + "\",\"createDirectories\":true");
+            StringAssert.Contains("\"saved\":true", ExtractToolText(saveResponse));
+            Assert.IsTrue(File.Exists(Path.Combine(UnityMcpPathUtility.ProjectRoot, prefabPath)));
+
+            var infoResponse = CallTool("unity.get_prefab_info", "\"path\":\"" + prefabPath + "\"");
+            StringAssert.Contains(prefabPath, ExtractToolText(infoResponse));
+
+            var instantiateResponse = CallTool("unity.instantiate_prefab", "\"prefabPath\":\"" + prefabPath + "\",\"name\":\"OpenUnityMcpPrefabInstance\",\"select\":false");
+            StringAssert.Contains("OpenUnityMcpPrefabInstance", ExtractToolText(instantiateResponse));
+            Assert.NotNull(GameObject.Find("OpenUnityMcpPrefabInstance"));
+        }
+
+        [Test]
+        public void AssetLifecycleToolsCreateCopyMoveAndDeleteAssets()
+        {
+            var folderPath = GeneratedFolder + "/Lifecycle";
+            var sourcePath = folderPath + "/Source.txt";
+            var copiedPath = folderPath + "/Copied.txt";
+            var movedPath = folderPath + "/Moved.txt";
+
+            var createFolderResponse = CallTool("unity.create_folder", "\"path\":\"" + folderPath + "\"");
+            StringAssert.Contains("\"created\":true", ExtractToolText(createFolderResponse));
+            Assert.IsTrue(AssetDatabase.IsValidFolder(folderPath));
+
+            var writeResponse = CallTool("unity.write_asset_text", "\"path\":\"" + sourcePath + "\",\"text\":\"lifecycle\",\"createDirectories\":true");
+            StringAssert.Contains(sourcePath, ExtractToolText(writeResponse));
+
+            var copyResponse = CallTool("unity.copy_asset", "\"sourcePath\":\"" + sourcePath + "\",\"destinationPath\":\"" + copiedPath + "\"");
+            StringAssert.Contains("\"copied\":true", ExtractToolText(copyResponse));
+            Assert.IsTrue(File.Exists(Path.Combine(UnityMcpPathUtility.ProjectRoot, copiedPath)));
+
+            var moveResponse = CallTool("unity.move_asset", "\"sourcePath\":\"" + copiedPath + "\",\"destinationPath\":\"" + movedPath + "\"");
+            StringAssert.Contains("\"moved\":true", ExtractToolText(moveResponse));
+            Assert.IsFalse(File.Exists(Path.Combine(UnityMcpPathUtility.ProjectRoot, copiedPath)));
+            Assert.IsTrue(File.Exists(Path.Combine(UnityMcpPathUtility.ProjectRoot, movedPath)));
+
+            var deleteFileResponse = CallTool("unity.delete_asset", "\"path\":\"" + sourcePath + "\"");
+            StringAssert.Contains("\"deleted\":true", ExtractToolText(deleteFileResponse));
+            Assert.IsFalse(File.Exists(Path.Combine(UnityMcpPathUtility.ProjectRoot, sourcePath)));
+
+            var deleteFolderResponse = CallTool("unity.delete_asset", "\"path\":\"" + folderPath + "\",\"recursive\":true");
+            StringAssert.Contains("\"deleted\":true", ExtractToolText(deleteFolderResponse));
+            Assert.IsFalse(AssetDatabase.IsValidFolder(folderPath));
+        }
+
+        [Test]
+        public void SceneToolsSaveOpenSaveAllAndCloseScene()
+        {
+            var baseScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var baseScenePath = GeneratedFolder + "/BaseScene.unity";
+            Directory.CreateDirectory(Path.Combine(UnityMcpPathUtility.ProjectRoot, GeneratedFolder));
+            Assert.IsTrue(EditorSceneManager.SaveScene(baseScene, baseScenePath));
+
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            SceneManager.SetActiveScene(scene);
+            new GameObject("OpenUnityMcpSceneToolObject");
+
+            var scenePath = GeneratedFolder + "/GeneratedScene.unity";
+            var saveResponse = CallTool("unity.save_scene", "\"saveAsPath\":\"" + scenePath + "\",\"createDirectories\":true");
+            StringAssert.Contains("\"saved\":true", ExtractToolText(saveResponse));
+            Assert.IsTrue(File.Exists(Path.Combine(UnityMcpPathUtility.ProjectRoot, scenePath)));
+
+            EditorSceneManager.CloseScene(scene, true);
+
+            var openResponse = CallTool("unity.open_scene", "\"path\":\"" + scenePath + "\",\"mode\":\"Additive\",\"setActive\":true");
+            StringAssert.Contains(scenePath, ExtractToolText(openResponse));
+            Assert.AreEqual(scenePath, SceneManager.GetActiveScene().path);
+
+            var saveAllResponse = CallTool("unity.save_all_scenes", string.Empty);
+            StringAssert.Contains("\"saved\":true", ExtractToolText(saveAllResponse));
+
+            var closeResponse = CallTool("unity.close_scene", "\"scenePath\":\"" + scenePath + "\",\"discardUnsavedChanges\":true");
+            StringAssert.Contains("\"closed\":true", ExtractToolText(closeResponse));
+        }
+
+        private static McpProtocolResponse CallTool(string toolName, string argumentsJson)
+        {
+            return McpProtocol.Handle("{\"jsonrpc\":\"2.0\",\"id\":\"call\",\"method\":\"tools/call\",\"params\":{\"name\":\"" + toolName + "\",\"arguments\":{" + argumentsJson + "}}}");
+        }
+
+        private static string ExtractToolText(McpProtocolResponse response)
+        {
+            var body = McpJson.Parse(response.Body) as System.Collections.Generic.Dictionary<string, object>;
+            var result = body["result"] as System.Collections.Generic.Dictionary<string, object>;
+            var content = result["content"] as System.Collections.Generic.List<object>;
+            var first = content[0] as System.Collections.Generic.Dictionary<string, object>;
+            return (string)first["text"];
+        }
+    }
+}

@@ -1,0 +1,69 @@
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using NUnit.Framework;
+
+namespace StrangeApe.OpenUnityMcp.Tests
+{
+    public sealed class McpServerHttpTests
+    {
+        [TearDown]
+        public void TearDown()
+        {
+            OpenUnityMcpServer.Stop();
+        }
+
+        [Test]
+        public void HttpEndpointHandlesInitializeAndToolsList()
+        {
+            var port = FindFreePort();
+            OpenUnityMcpServer.Start(port);
+
+            var initialize = Post(port, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}");
+            StringAssert.Contains("\"open-unity-mcp\"", initialize);
+            StringAssert.Contains("\"protocolVersion\":\"2025-06-18\"", initialize);
+
+            var tools = Post(port, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}");
+            StringAssert.Contains("\"unity.get_project_info\"", tools);
+            StringAssert.Contains("\"unity.write_asset_text\"", tools);
+        }
+
+        private static string Post(int port, string body)
+        {
+            var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + "/mcp");
+            request.Method = "POST";
+            request.ContentType = "application/json";
+            var bytes = Encoding.UTF8.GetBytes(body);
+            request.ContentLength = bytes.Length;
+
+            using (var stream = request.GetRequestStream())
+            {
+                stream.Write(bytes, 0, bytes.Length);
+            }
+
+            using (var response = (HttpWebResponse)request.GetResponse())
+            using (var stream = response.GetResponseStream())
+            using (var reader = new StreamReader(stream))
+            {
+                Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+                return reader.ReadToEnd();
+            }
+        }
+
+        private static int FindFreePort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            try
+            {
+                return ((IPEndPoint)listener.LocalEndpoint).Port;
+            }
+            finally
+            {
+                listener.Stop();
+            }
+        }
+    }
+}
+

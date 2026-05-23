@@ -1,0 +1,22 @@
+{
+  "name": "StrangeApe.OpenUnityMcp.Editor.Tests",
+  "rootNamespace": "StrangeApe.OpenUnityMcp.Tests",
+  "references": [
+    "StrangeApe.OpenUnityMcp.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "noEngineReferences": false
+}
+
