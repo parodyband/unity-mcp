@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "unity": {
+    "open-unity-mcp": {
       "command": "npx",
       "args": [
         "-y",

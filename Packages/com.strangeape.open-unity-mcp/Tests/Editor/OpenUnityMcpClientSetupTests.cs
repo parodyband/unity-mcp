@@ -20,12 +20,12 @@ namespace StrangeApe.OpenUnityMcp.Tests
                 var path = OpenUnityMcpClientSetup.InstallClaudeCodeProjectConfig(directory, "http://127.0.0.1:9123/mcp");
                 var root = ReadJsonObject(path);
                 var servers = root["mcpServers"] as Dictionary<string, object>;
-                var unity = servers["unity"] as Dictionary<string, object>;
+                var server = servers["open-unity-mcp"] as Dictionary<string, object>;
 
                 Assert.NotNull(servers);
                 Assert.NotNull(servers["filesystem"]);
-                Assert.AreEqual("http", unity["type"]);
-                Assert.AreEqual("http://127.0.0.1:9123/mcp", unity["url"]);
+                Assert.AreEqual("http", server["type"]);
+                Assert.AreEqual("http://127.0.0.1:9123/mcp", server["url"]);
             }
             finally
             {
@@ -44,10 +44,11 @@ namespace StrangeApe.OpenUnityMcp.Tests
 
                 var root = ReadJsonObject(path);
                 var servers = root["mcpServers"] as Dictionary<string, object>;
-                var unity = servers["unity"] as Dictionary<string, object>;
-                var args = unity["args"] as List<object>;
+                var server = servers["open-unity-mcp"] as Dictionary<string, object>;
+                var args = server["args"] as List<object>;
 
-                Assert.AreEqual("npx", unity["command"]);
+                Assert.AreEqual("npx", server["command"]);
+                Assert.IsFalse(server.ContainsKey("type"));
                 CollectionAssert.AreEqual(
                     new object[] { "-y", "mcp-remote@latest", "--http", "http://127.0.0.1:8080/mcp", "--allow-http" },
                     args);
@@ -59,17 +60,17 @@ namespace StrangeApe.OpenUnityMcp.Tests
         }
 
         [Test]
-        public void CodexConfigReplacesUnitySectionOnly()
+        public void CodexConfigReplacesOpenUnityMcpSectionOnly()
         {
             var existing = string.Join("\n", new[]
             {
                 "[profiles.default]",
                 "model = \"gpt-5\"",
                 "",
-                "[mcp_servers.unity]",
+                "[mcp_servers.open-unity-mcp]",
                 "command = \"old\"",
                 "",
-                "[mcp_servers.unity.env]",
+                "[mcp_servers.open-unity-mcp.env]",
                 "OLD = \"1\"",
                 "",
                 "[mcp_servers.docs]",
@@ -80,9 +81,9 @@ namespace StrangeApe.OpenUnityMcp.Tests
 
             StringAssert.Contains("[profiles.default]\r\nmodel = \"gpt-5\"", updated);
             StringAssert.Contains("[mcp_servers.docs]\r\nurl = \"https://example.test/mcp\"", updated);
-            StringAssert.Contains("[mcp_servers.unity]\r\nurl = \"http://127.0.0.1:8080/mcp\"", updated);
+            StringAssert.Contains("[mcp_servers.open-unity-mcp]\r\nurl = \"http://127.0.0.1:8080/mcp\"", updated);
             Assert.IsFalse(updated.Contains("command = \"old\""));
-            Assert.IsFalse(updated.Contains("[mcp_servers.unity.env]"));
+            Assert.IsFalse(updated.Contains("[mcp_servers.open-unity-mcp.env]"));
         }
 
         [Test]

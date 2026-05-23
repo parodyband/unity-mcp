@@ -52,7 +52,7 @@ Claude Code and Codex connect directly to the HTTP endpoint. Claude Desktop is c
 For clients that accept an HTTP MCP endpoint manually:
 
 ```toml
-[mcp_servers.unity]
+[mcp_servers.open-unity-mcp]
 url = "http://127.0.0.1:8080/mcp"
 ```
 

@@ -24,7 +24,7 @@ Tools > Open Unity MCP > Setup > Claude Desktop Bridge
 
 The same actions are available in `Tools > Open Unity MCP > Status`.
 
-These actions merge a `unity` MCP server entry into the target config and keep unrelated servers intact. Restart the client after setup.
+These actions merge an `open-unity-mcp` server entry into the target config and keep unrelated servers intact. Restart the client after setup.
 
 | Client | Config Updated | Transport |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ Use the Unity auto setup action, or add this `.mcp.json` file to the Unity proje
 ```json
 {
   "mcpServers": {
-    "unity": {
+    "open-unity-mcp": {
       "type": "http",
       "url": "http://127.0.0.1:8080/mcp"
     }
@@ -62,24 +62,26 @@ Use the Unity auto setup action, or add this `.mcp.json` file to the Unity proje
 You can also add it with the Claude Code CLI:
 
 ```powershell
-claude mcp add --transport http unity http://127.0.0.1:8080/mcp
+claude mcp add --transport http open-unity-mcp http://127.0.0.1:8080/mcp
 ```
 
 Run `/mcp` in Claude Code to confirm the connection.
+
+Claude Code may ask for permission to read `.claude/settings.local.json` when it loads project MCP settings. That prompt is for Claude Code's local project settings, not Claude Desktop.
 
 ## Codex
 
 Use the Unity auto setup action, or add this to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.unity]
+[mcp_servers.open-unity-mcp]
 url = "http://127.0.0.1:8080/mcp"
 ```
 
 You can also add it with the Codex CLI:
 
 ```powershell
-codex mcp add unity --url http://127.0.0.1:8080/mcp
+codex mcp add open-unity-mcp --url http://127.0.0.1:8080/mcp
 ```
 
 Run `codex mcp list` to confirm the connection.
@@ -91,7 +93,7 @@ Use the Unity auto setup action, or add this to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "unity": {
+    "open-unity-mcp": {
       "command": "npx",
       "args": [
         "-y",
@@ -110,6 +112,10 @@ Common config locations:
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Linux: `~/.config/Claude/claude_desktop_config.json`
+
+In Claude Desktop, `Settings > Developer > Edit Config` should open `claude_desktop_config.json`. A prompt for `.claude/settings.local.json` is from Claude Code.
+
+On Windows, auto setup also updates a detected MSIX package config path if Claude Desktop is using one.
 
 Restart Claude Desktop after editing config. Keep Unity open with the MCP server running, or enable `Tools > Open Unity MCP > Auto Start`.
 

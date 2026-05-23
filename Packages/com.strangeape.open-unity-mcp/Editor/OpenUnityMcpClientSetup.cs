@@ -10,7 +10,7 @@ namespace StrangeApe.OpenUnityMcp
 {
     internal static class OpenUnityMcpClientSetup
     {
-        private const string ServerName = "unity";
+        private const string ServerName = "open-unity-mcp";
         private const string CodexSectionName = "mcp_servers." + ServerName;
         private const string ClaudeDesktopBridgePackage = "mcp-remote@latest";
         private const string NewLine = "\r\n";
@@ -47,8 +47,8 @@ namespace StrangeApe.OpenUnityMcp
 
             InstallWithDialog(
                 "Claude Desktop",
-                () => InstallClaudeDesktopConfig(ClaudeDesktopConfigPath, OpenUnityMcpSettings.Endpoint),
-                "Restart Claude Desktop after updating the config.");
+                () => string.Join("\n", InstallClaudeDesktopConfigs(OpenUnityMcpSettings.Endpoint).ToArray()),
+                "Restart Claude Desktop, or reload MCP configuration from Settings > Developer.");
         }
 
         public static void DrawClientSetupGui()
@@ -56,7 +56,11 @@ namespace StrangeApe.OpenUnityMcp
             EditorGUILayout.LabelField("Client Setup", EditorStyles.boldLabel);
             EditorGUILayout.LabelField("Claude Code", ProjectRelativeClaudeCodeConfigPath);
             EditorGUILayout.LabelField("Codex", CodexConfigPath);
-            EditorGUILayout.LabelField("Claude Desktop", ClaudeDesktopConfigPath);
+            var claudeDesktopPaths = ClaudeDesktopConfigPaths;
+            for (var i = 0; i < claudeDesktopPaths.Count; i++)
+            {
+                EditorGUILayout.LabelField(i == 0 ? "Claude Desktop" : "Claude Desktop Alt", claudeDesktopPaths[i]);
+            }
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -85,12 +89,15 @@ namespace StrangeApe.OpenUnityMcp
 
         internal static string CodexConfigPath => Path.Combine(GetHomeDirectory(), ".codex", "config.toml");
 
-        internal static string ClaudeDesktopConfigPath
+        internal static string ClaudeDesktopConfigPath => ClaudeDesktopConfigPaths[0];
+
+        internal static List<string> ClaudeDesktopConfigPaths
         {
             get
             {
+                var paths = new List<string>();
 #if UNITY_EDITOR_OSX
-                return Path.Combine(GetHomeDirectory(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
+                AddUniquePath(paths, Path.Combine(GetHomeDirectory(), "Library", "Application Support", "Claude", "claude_desktop_config.json"));
 #elif UNITY_EDITOR_WIN
                 var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 if (string.IsNullOrEmpty(appData))
@@ -98,10 +105,13 @@ namespace StrangeApe.OpenUnityMcp
                     appData = Path.Combine(GetHomeDirectory(), "AppData", "Roaming");
                 }
 
-                return Path.Combine(appData, "Claude", "claude_desktop_config.json");
+                AddUniquePath(paths, Path.Combine(appData, "Claude", "claude_desktop_config.json"));
+                AddWindowsMsixClaudeDesktopConfigPaths(paths);
 #else
-                return Path.Combine(GetHomeDirectory(), ".config", "Claude", "claude_desktop_config.json");
+                AddUniquePath(paths, Path.Combine(GetHomeDirectory(), ".config", "Claude", "claude_desktop_config.json"));
 #endif
+
+                return paths;
             }
         }
 
@@ -121,6 +131,18 @@ namespace StrangeApe.OpenUnityMcp
         {
             UpsertJsonServerConfig(configPath, CreateClaudeDesktopBridgeConfig(endpoint));
             return configPath;
+        }
+
+        internal static List<string> InstallClaudeDesktopConfigs(string endpoint)
+        {
+            var updatedPaths = new List<string>();
+            foreach (var configPath in ClaudeDesktopConfigPaths)
+            {
+                InstallClaudeDesktopConfig(configPath, endpoint);
+                updatedPaths.Add(configPath);
+            }
+
+            return updatedPaths;
         }
 
         internal static string InstallCodexConfig(string configPath, string endpoint)
@@ -410,6 +432,49 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             File.WriteAllText(path, content, new UTF8Encoding(false));
+        }
+
+        private static void AddWindowsMsixClaudeDesktopConfigPaths(List<string> paths)
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrEmpty(localAppData))
+            {
+                return;
+            }
+
+            var packagesPath = Path.Combine(localAppData, "Packages");
+            if (!Directory.Exists(packagesPath))
+            {
+                return;
+            }
+
+            AddWindowsMsixClaudeDesktopConfigPaths(paths, packagesPath, "Claude_*");
+            AddWindowsMsixClaudeDesktopConfigPaths(paths, packagesPath, "Anthropic.ClaudeDesktop_*");
+        }
+
+        private static void AddWindowsMsixClaudeDesktopConfigPaths(List<string> paths, string packagesPath, string pattern)
+        {
+            foreach (var packagePath in Directory.GetDirectories(packagesPath, pattern))
+            {
+                var configPath = Path.Combine(packagePath, "LocalCache", "Roaming", "Claude", "claude_desktop_config.json");
+                if (File.Exists(configPath) || Directory.Exists(Path.GetDirectoryName(configPath)))
+                {
+                    AddUniquePath(paths, configPath);
+                }
+            }
+        }
+
+        private static void AddUniquePath(List<string> paths, string path)
+        {
+            foreach (var existing in paths)
+            {
+                if (string.Equals(existing, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
+            paths.Add(path);
         }
 
         private static string GetHomeDirectory()
