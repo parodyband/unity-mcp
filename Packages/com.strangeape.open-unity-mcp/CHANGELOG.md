@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Added Scene View camera positioning and object framing tools.
+- Added `unity.capture_scene_view`, which returns MCP image content with a PNG payload for vision-capable clients.
+- Added optional Scene View capture persistence under `Temp/OpenUnityMcp`.
+
 ## 0.3.0
 
 - Added explicit transform inputs and readback for scene object creation.

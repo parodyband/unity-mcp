@@ -67,6 +67,18 @@ Example batch shape for a simple snowman:
 }
 ```
 
+## Scene View
+
+- `unity.set_scene_view_camera`
+- `unity.frame_scene_view`
+- `unity.capture_scene_view`
+
+`unity.set_scene_view_camera` accepts a `pivot`, `rotationEuler`, `size`, `orthographic`, optional target `objectId`, and optional camera `position`. If `position` is provided, it derives the Scene View rotation from the position to the pivot or target object center.
+
+`unity.frame_scene_view` frames a target `objectId`, or the current selection when no `objectId` is provided. It uses renderer and collider bounds when available.
+
+`unity.capture_scene_view` renders the active Scene View camera to PNG and returns two MCP content blocks: a text metadata block and an `image` block with `mimeType: "image/png"` and base64 `data`. Set `saveToTemp` to also write the PNG under `Temp/OpenUnityMcp` and include that project-relative path in the metadata.
+
 ## Prefabs
 
 - `unity.get_prefab_info`

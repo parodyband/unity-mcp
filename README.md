@@ -65,6 +65,7 @@ The package currently includes tools for:
 - Console read and clear
 - Scene listing, bounded hierarchy reads, open, save, and close
 - Explicit transform setting and batch primitive creation for scene construction
+- Scene View camera positioning, object framing, and image capture
 - Prefab inspection, instantiation, and prefab asset saving
 - Selection and simple GameObject creation
 - Menu execution and play-mode control

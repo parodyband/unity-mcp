@@ -61,6 +61,9 @@ namespace StrangeApe.OpenUnityMcp
             UnityMcpSceneTools.SaveScene,
             UnityMcpSceneTools.SelectObject,
             UnityMcpSceneTools.SetTransform,
+            UnityMcpSceneViewTools.CaptureSceneView,
+            UnityMcpSceneViewTools.FrameSceneView,
+            UnityMcpSceneViewTools.SetSceneViewCamera,
             UnityMcpTools.WriteAssetText
         };
 
@@ -111,6 +114,13 @@ namespace StrangeApe.OpenUnityMcp
                 "content", McpJson.Array(McpJson.Object(
                     "type", "text",
                     "text", text ?? string.Empty)),
+                "isError", isError);
+        }
+
+        public static Dictionary<string, object> ToolContent(List<object> content, bool isError = false)
+        {
+            return McpJson.Object(
+                "content", content ?? new List<object>(),
                 "isError", isError);
         }
 

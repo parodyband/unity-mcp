@@ -88,6 +88,9 @@ Tools identify Unity objects with `objectId` strings backed by Unity 6 `EntityId
 - `unity.create_game_object`
 - `unity.create_game_objects`
 - `unity.set_transform`
+- `unity.set_scene_view_camera`
+- `unity.frame_scene_view`
+- `unity.capture_scene_view`
 - `unity.open_scene`
 - `unity.save_scene`
 - `unity.save_all_scenes`
