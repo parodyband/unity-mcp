@@ -16,7 +16,7 @@ https://github.com/parodyband/unity-mcp.git?path=/Packages/com.strangeape.open-u
 ```
 
 5. Click `Add`.
-6. After Unity imports the package, open `Tools > Open Unity MCP > Status` and click **Start**.
+6. After Unity imports the package, open `Preferences > Open Unity MCP` and click **Start**.
 
 Requires Unity 6 or newer.
 
@@ -44,7 +44,7 @@ Unity also shows a Scene View toolbar badge for server status and quick start/st
 
 ## Client Auto Setup
 
-After installing the package, open `Tools > Open Unity MCP > Status` and use the **Client Setup** buttons to configure common local clients. You can also use the matching commands under `Tools > Open Unity MCP > Setup`.
+After installing the package, open `Preferences > Open Unity MCP` and use the **Client Setup** buttons to configure common local clients. You can also use the matching commands under `Tools > Open Unity MCP > Setup`.
 
 - **Setup Claude Code** - writes `.mcp.json` in the project root
 - **Setup Codex** - writes `~/.codex/config.toml`

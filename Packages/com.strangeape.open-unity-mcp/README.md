@@ -1,116 +1,118 @@
 # Open Unity MCP
 
-Open Unity MCP runs a local MCP server inside the Unity 6+ Editor. It exposes a small set of project and asset tools over Streamable HTTP without a separate executable or paid relay.
+Run a local Model Context Protocol server inside the Unity 6+ Editor.
+
+Open Unity MCP lets MCP clients inspect and automate your Unity project through a local Streamable HTTP endpoint. It is packaged as a normal Unity Package Manager dependency, so there is no separate Unity relay app to install.
+
+## What You Get
+
+- Local-only MCP endpoint at `http://127.0.0.1:8080/mcp`
+- Unity Preferences page for server status, port, auto-start, and client setup
+- Scene and hierarchy tools for reading, creating, transforming, and selecting GameObjects
+- Batch object creation for fast scene construction
+- Scene View camera framing and PNG capture returned as MCP image content
+- Component, serialized property, prefab, asset, console, build, and validation tools
+- MCP resources and prompts for project context and Unity-focused agent guidance
+- Built-in setup helpers for Claude Code, Codex, and Claude Desktop
+
+## Requirements
+
+- Unity 6 or newer
+- An MCP client that supports Streamable HTTP, or Claude Desktop with the included `mcp-remote` bridge setup
+- Node.js/npm only if you use the Claude Desktop bridge
 
 ## Install
 
-Open your Unity 6+ project, then install the package through Unity Package Manager:
+Install from Unity Package Manager:
 
-1. Open `Window > Package Manager`.
-2. Click the `+` button in the top-left corner.
-3. Choose `Add package from git URL...`.
-4. Paste this URL:
+1. Open **Window > Package Manager**.
+2. Click the **+** button.
+3. Choose **Add package from git URL...**.
+4. Paste:
 
 ```text
 https://github.com/parodyband/unity-mcp.git?path=/Packages/com.strangeape.open-unity-mcp
 ```
 
-5. Click `Add`.
+5. Click **Add**.
 
-## Start
+You can also add it directly to `Packages/manifest.json`:
 
-Open the MCP window:
-
-```text
-Tools > Open Unity MCP > Status
+```json
+{
+  "dependencies": {
+    "com.strangeape.open-unity-mcp": "https://github.com/parodyband/unity-mcp.git?path=/Packages/com.strangeape.open-unity-mcp"
+  }
+}
 ```
 
-Click **Start** to run the server. Default endpoint:
+## Quick Start
+
+1. Open **Preferences > Open Unity MCP**.
+2. Click **Start**.
+3. Keep Unity open while your MCP client connects to:
 
 ```text
 http://127.0.0.1:8080/mcp
 ```
 
-Enable **Auto Start** in the window to launch the server with each editor session.
-The Scene View toolbar badge also shows server status and provides quick start/stop access.
+The Scene View toolbar badge shows whether the server is running and includes quick start/stop controls. You can also use **Tools > Open Unity MCP > Preferences** to jump back to the Preferences page.
 
-## Client Config
+## Client Setup
 
-In the same window, use the **Client Setup** buttons, or use the matching setup commands under `Tools > Open Unity MCP > Setup`:
+Open **Preferences > Open Unity MCP** and use the **Client Setup** buttons:
 
-- **Setup Claude Code** - writes `.mcp.json` in the project root
-- **Setup Codex** - writes `~/.codex/config.toml`
-- **Setup Claude Desktop Bridge** - writes `claude_desktop_config.json` with an `mcp-remote` stdio bridge
+| Client | What gets configured | Transport |
+| --- | --- | --- |
+| Claude Code | `.mcp.json` in the Unity project root | Direct HTTP |
+| Codex | `~/.codex/config.toml` | Direct HTTP |
+| Claude Desktop | `claude_desktop_config.json` | Local `mcp-remote` stdio bridge |
 
-Claude Code and Codex connect directly to the HTTP endpoint. Claude Desktop is configured through a local `mcp-remote` stdio bridge because its local MCP config starts processes.
-
-For clients that accept an HTTP MCP endpoint manually:
+For clients that accept a Streamable HTTP endpoint manually, use:
 
 ```toml
 [mcp_servers.open-unity-mcp]
 url = "http://127.0.0.1:8080/mcp"
 ```
 
-See `Documentation~/client-setup.md` for Claude Code, Codex, and Claude Desktop config details.
+Detailed client setup: [Documentation~/client-setup.md](Documentation~/client-setup.md).
 
-## Tools
+## Tool Coverage
 
-Tools identify Unity objects with `objectId` strings backed by Unity 6 `EntityId` values.
+Open Unity MCP exposes tools for:
 
-- `unity.get_project_info`
-- `unity.get_selection`
-- `unity.list_packages`
-- `unity.set_play_mode`
-- `unity.get_compilation_status`
-- `unity.validate_project`
-- `unity.request_script_compilation`
-- `unity.get_build_settings`
-- `unity.get_components`
-- `unity.add_component`
-- `unity.get_serialized_properties`
-- `unity.set_serialized_property`
-- `unity.find_assets`
-- `unity.get_asset_metadata`
-- `unity.create_folder`
-- `unity.copy_asset`
-- `unity.move_asset`
-- `unity.delete_asset`
-- `unity.read_asset_text`
-- `unity.write_asset_text`
-- `unity.import_asset`
-- `unity.refresh_assets`
-- `unity.get_console_logs`
-- `unity.clear_console`
-- `unity.execute_menu_item`
-- `unity.get_open_scenes`
-- `unity.get_hierarchy`
-- `unity.select_object`
-- `unity.create_game_object`
-- `unity.create_game_objects`
-- `unity.set_transform`
-- `unity.set_scene_view_camera`
-- `unity.frame_scene_view`
-- `unity.capture_scene_view`
-- `unity.open_scene`
-- `unity.save_scene`
-- `unity.save_all_scenes`
-- `unity.close_scene`
-- `unity.get_prefab_info`
-- `unity.instantiate_prefab`
-- `unity.save_as_prefab_asset`
-- `unity.build_player`
+- Project and editor state
+- Package listing
+- Asset search, metadata, import, refresh, read/write, create, copy, move, and delete
+- Component listing, component add, serialized property read, and serialized property write
+- Console read and clear
+- Scene listing, hierarchy reads, open, save, save all, and close
+- GameObject creation, batch creation, selection, and transform correction
+- Scene View camera positioning, object framing, and screenshot capture
+- Prefab inspection, prefab instantiation, and prefab asset saving
+- Menu execution, play-mode control, script compilation, validation, build settings, and restricted player builds
 
-The server binds to `127.0.0.1` only and rejects non-local `Origin` headers.
-Scene replacement and close operations refuse to discard dirty scene changes unless the tool call explicitly saves or discards them.
-Player builds are restricted to the project `Builds/` folder.
+Full tool reference: [Documentation~/tools.md](Documentation~/tools.md).
 
-More detail: `Documentation~/tools.md`.
+## Security Model
 
-## Resources And Prompts
+The server is designed for local editor automation:
 
-The server also exposes MCP resources for project/editor context and package docs, plus two prompts:
+- It binds to `127.0.0.1` only.
+- It rejects non-local browser `Origin` headers.
+- Asset file writes are restricted to `Assets` and `Packages`.
+- Player build output is restricted to the project `Builds/` folder.
+- Scene open and close tools protect dirty scenes unless the caller explicitly saves or discards changes.
 
-- `unity_editor_task`
-- `unity_code_review`
+Only connect local MCP clients you trust. Some tools can mutate project files, scenes, generated artifacts, and editor state.
 
-See `Documentation~/tools.md` for the full list.
+## Documentation
+
+- [Client setup](Documentation~/client-setup.md)
+- [Tool reference](Documentation~/tools.md)
+- [Architecture notes](Documentation~/architecture.md)
+- [Changelog](CHANGELOG.md)
+
+## License
+
+MIT

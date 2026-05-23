@@ -1,16 +1,35 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 namespace StrangeApe.OpenUnityMcp
 {
-    internal sealed class OpenUnityMcpWindow : EditorWindow
+    internal static class OpenUnityMcpPreferences
     {
-        private int _port;
+        private const string PreferencesPath = "Preferences/Open Unity MCP";
 
-        [MenuItem("Tools/Open Unity MCP/Status", false, 0)]
+        [SettingsProvider]
+        public static SettingsProvider CreateSettingsProvider()
+        {
+            return new SettingsProvider(PreferencesPath, SettingsScope.User)
+            {
+                label = "Open Unity MCP",
+                guiHandler = _ => DrawPreferencesGui(),
+                keywords = new HashSet<string>
+                {
+                    "open unity mcp",
+                    "mcp",
+                    "server",
+                    "claude",
+                    "codex"
+                }
+            };
+        }
+
+        [MenuItem("Tools/Open Unity MCP/Preferences", false, 0)]
         public static void Open()
         {
-            GetWindow<OpenUnityMcpWindow>("Open Unity MCP");
+            SettingsService.OpenUserPreferences(PreferencesPath);
         }
 
         [MenuItem("Tools/Open Unity MCP/Start Server", false, 20)]
@@ -51,23 +70,17 @@ namespace StrangeApe.OpenUnityMcp
             return true;
         }
 
-        private void OnEnable()
-        {
-            _port = OpenUnityMcpSettings.Port;
-        }
-
-        private void OnGUI()
+        private static void DrawPreferencesGui()
         {
             EditorGUILayout.LabelField("Server", EditorStyles.boldLabel);
             EditorGUILayout.LabelField("Status", OpenUnityMcpServer.IsRunning ? "Running" : "Stopped");
 
             using (new EditorGUI.DisabledScope(OpenUnityMcpServer.IsRunning))
             {
-                _port = EditorGUILayout.IntField("Port", _port);
-                if (_port != OpenUnityMcpSettings.Port)
+                var port = EditorGUILayout.DelayedIntField("Port", OpenUnityMcpSettings.Port);
+                if (port != OpenUnityMcpSettings.Port)
                 {
-                    OpenUnityMcpSettings.Port = _port;
-                    _port = OpenUnityMcpSettings.Port;
+                    OpenUnityMcpSettings.Port = port;
                 }
             }
 

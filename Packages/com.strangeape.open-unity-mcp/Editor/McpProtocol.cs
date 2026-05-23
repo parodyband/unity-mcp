@@ -100,7 +100,7 @@ namespace StrangeApe.OpenUnityMcp
                 "serverInfo", McpJson.Object(
                     "name", "open-unity-mcp",
                     "title", "Open Unity MCP",
-                    "version", "0.4.0",
+                    "version", "0.5.0",
                     "description", "A small in-editor MCP server for Unity."),
                 "instructions", "Use Unity tools for project inspection and editor automation. File writes are limited to Assets and Packages.");
         }

@@ -1,9 +1,9 @@
 # Client Setup
 
-Open the MCP window in Unity and click **Start**:
+Open the MCP Preferences section in Unity and click **Start**:
 
 ```text
-Tools > Open Unity MCP > Status
+Preferences > Open Unity MCP
 ```
 
 Default endpoint:
@@ -16,7 +16,7 @@ The Scene View toolbar badge also shows server status and provides quick start/s
 
 ## Auto Setup
 
-The same window has **Client Setup** buttons that update common local client config files. You can also use the matching setup commands under `Tools > Open Unity MCP > Setup`.
+The same Preferences section has **Client Setup** buttons that update common local client config files. You can also use the matching setup commands under `Tools > Open Unity MCP > Setup`.
 
 - **Setup Claude Code**
 - **Setup Codex**
@@ -115,7 +115,7 @@ In Claude Desktop, `Settings > Developer > Edit Config` should open `claude_desk
 
 On Windows, auto setup also updates a detected MSIX package config path if Claude Desktop is using one.
 
-Restart Claude Desktop after editing config. Keep Unity open with the MCP server running, or enable `Tools > Open Unity MCP > Auto Start`.
+Restart Claude Desktop after editing config. Keep Unity open with the MCP server running, or enable **Auto Start** in `Preferences > Open Unity MCP`.
 
 ## Security
 

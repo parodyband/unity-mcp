@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- Moved server settings and client setup into `Preferences > Open Unity MCP`.
+- Replaced the dedicated status tool window with a Preferences shortcut and kept quick server actions under `Tools > Open Unity MCP`.
+
 ## 0.4.0
 
 - Added Scene View camera positioning and object framing tools.

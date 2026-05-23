@@ -14,10 +14,10 @@ namespace StrangeApe.OpenUnityMcp
 
         private const string StatusElementId = "open-unity-mcp/status";
         private const string ToggleServerElementId = "open-unity-mcp/toggle";
-        private const string OpenWindowElementId = "open-unity-mcp/open-window";
+        private const string OpenPreferencesElementId = "open-unity-mcp/open-preferences";
 
         private OpenUnityMcpOverlay()
-            : base(StatusElementId, ToggleServerElementId, OpenWindowElementId)
+            : base(StatusElementId, ToggleServerElementId, OpenPreferencesElementId)
         {
         }
 
@@ -112,14 +112,14 @@ namespace StrangeApe.OpenUnityMcp
             }
         }
 
-        [EditorToolbarElement(OpenWindowElementId, typeof(SceneView))]
-        private sealed class OpenWindowElement : EditorToolbarButton
+        [EditorToolbarElement(OpenPreferencesElementId, typeof(SceneView))]
+        private sealed class OpenPreferencesElement : EditorToolbarButton
         {
-            public OpenWindowElement()
+            public OpenPreferencesElement()
             {
-                tooltip = "Open the Open Unity MCP window";
+                tooltip = "Open Unity MCP preferences";
                 icon = EditorGUIUtility.IconContent("d_SettingsIcon").image as Texture2D;
-                clicked += OpenUnityMcpWindow.Open;
+                clicked += OpenUnityMcpPreferences.Open;
             }
         }
     }
