@@ -8,6 +8,10 @@ namespace StrangeApe.OpenUnityMcp
     {
         private const string PreferencesPath = "Preferences/Open Unity MCP";
 
+        private static bool _toolsFoldout = true;
+        private static Vector2 _toolsScroll;
+        private static string _toolsFilter = string.Empty;
+
         [SettingsProvider]
         public static SettingsProvider CreateSettingsProvider()
         {
@@ -113,10 +117,70 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             EditorGUILayout.Space();
+            DrawToolsGui();
+            EditorGUILayout.Space();
             OpenUnityMcpClientSetup.DrawClientSetupGui();
             EditorGUILayout.Space();
 
             EditorGUILayout.HelpBox("The server binds to 127.0.0.1 only. Configure your MCP client to use the endpoint above.", MessageType.Info);
+        }
+
+        private static void DrawToolsGui()
+        {
+            _toolsFoldout = EditorGUILayout.Foldout(_toolsFoldout, "Tools", true, EditorStyles.foldoutHeader);
+            if (!_toolsFoldout)
+            {
+                return;
+            }
+
+            EditorGUILayout.HelpBox("Disabled tools are hidden from MCP clients and rejected if called. Restart or reconnect your client after toggling so it refreshes its tool list.", MessageType.None);
+
+            var toolNames = new List<string>(McpToolRegistry.AllToolNames);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Enable All", GUILayout.Width(90)))
+                {
+                    foreach (var name in toolNames)
+                    {
+                        OpenUnityMcpSettings.SetToolEnabled(name, true);
+                    }
+                }
+
+                if (GUILayout.Button("Disable All", GUILayout.Width(90)))
+                {
+                    foreach (var name in toolNames)
+                    {
+                        OpenUnityMcpSettings.SetToolEnabled(name, false);
+                    }
+                }
+
+                GUILayout.FlexibleSpace();
+                EditorGUILayout.LabelField("Filter", GUILayout.Width(40));
+                _toolsFilter = EditorGUILayout.TextField(_toolsFilter, GUILayout.MinWidth(120));
+            }
+
+            using (var scroll = new EditorGUILayout.ScrollViewScope(_toolsScroll, GUILayout.MinHeight(160), GUILayout.MaxHeight(320)))
+            {
+                _toolsScroll = scroll.scrollPosition;
+                var filter = _toolsFilter == null ? string.Empty : _toolsFilter.Trim();
+                foreach (var name in toolNames)
+                {
+                    if (filter.Length > 0 && name.IndexOf(filter, System.StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        continue;
+                    }
+
+                    var enabled = OpenUnityMcpSettings.IsToolEnabled(name);
+                    var description = McpToolRegistry.GetToolDescription(name);
+                    var label = new GUIContent(name, description);
+                    var newValue = EditorGUILayout.ToggleLeft(label, enabled);
+                    if (newValue != enabled)
+                    {
+                        OpenUnityMcpSettings.SetToolEnabled(name, newValue);
+                    }
+                }
+            }
         }
     }
 }

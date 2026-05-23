@@ -72,11 +72,40 @@ namespace StrangeApe.OpenUnityMcp
             Array.Sort(Tools, (left, right) => string.CompareOrdinal(left.Name, right.Name));
         }
 
+        public static IEnumerable<string> AllToolNames
+        {
+            get
+            {
+                foreach (var tool in Tools)
+                {
+                    yield return tool.Name;
+                }
+            }
+        }
+
+        public static string GetToolDescription(string name)
+        {
+            foreach (var tool in Tools)
+            {
+                if (string.Equals(tool.Name, name, StringComparison.Ordinal))
+                {
+                    return tool.Description;
+                }
+            }
+
+            return string.Empty;
+        }
+
         public static Dictionary<string, object> ListTools()
         {
             var tools = new List<object>();
             foreach (var tool in Tools)
             {
+                if (!OpenUnityMcpSettings.IsToolEnabled(tool.Name))
+                {
+                    continue;
+                }
+
                 tools.Add(McpJson.Object(
                     "name", tool.Name,
                     "description", tool.Description,
@@ -93,6 +122,11 @@ namespace StrangeApe.OpenUnityMcp
                 if (!string.Equals(tool.Name, name, StringComparison.Ordinal))
                 {
                     continue;
+                }
+
+                if (!OpenUnityMcpSettings.IsToolEnabled(tool.Name))
+                {
+                    return ToolText("Tool '" + tool.Name + "' is disabled in Open Unity MCP preferences.", true);
                 }
 
                 try
