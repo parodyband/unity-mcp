@@ -2,8 +2,6 @@
   <img src="Images/Logo.png" alt="Open Unity MCP" width="190" />
 </p>
 
-<h1 align="center">Open Unity MCP</h1>
-
 <p align="center">
   <strong>A local Model Context Protocol server for the Unity 6+ Editor.</strong>
 </p>
