@@ -86,6 +86,8 @@ Tools identify Unity objects with `objectId` strings backed by Unity 6 `EntityId
 - `unity.get_hierarchy`
 - `unity.select_object`
 - `unity.create_game_object`
+- `unity.create_game_objects`
+- `unity.set_transform`
 - `unity.open_scene`
 - `unity.save_scene`
 - `unity.save_all_scenes`

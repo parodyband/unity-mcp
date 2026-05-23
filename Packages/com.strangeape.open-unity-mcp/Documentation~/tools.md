@@ -46,10 +46,26 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 - `unity.get_hierarchy`
 - `unity.select_object`
 - `unity.create_game_object`
+- `unity.create_game_objects`
+- `unity.set_transform`
 - `unity.open_scene`
 - `unity.save_scene`
 - `unity.save_all_scenes`
 - `unity.close_scene`
+
+`unity.create_game_object`, `unity.create_game_objects`, and `unity.set_transform` accept transform vectors as objects like `{"x":0,"y":1,"z":0}` or arrays like `[0,1,0]`. Use `localPosition`, `localRotationEuler`, and `localScale` when parenting objects; use `position` and `rotationEuler` for world-space values. Tool results include the final transform read back from Unity.
+
+Example batch shape for a simple snowman:
+
+```json
+{
+  "objects": [
+    { "name": "Snowman", "localPosition": { "x": 0, "y": 0, "z": 0 } },
+    { "name": "Body", "primitiveType": "Sphere", "parentIndex": 0, "localPosition": { "x": 0, "y": 1, "z": 0 }, "scale": { "x": 2, "y": 2, "z": 2 } },
+    { "name": "Head", "primitiveType": "Sphere", "parentIndex": 0, "localPosition": { "x": 0, "y": 2.7, "z": 0 }, "scale": { "x": 1, "y": 1, "z": 1 } }
+  ]
+}
+```
 
 ## Prefabs
 

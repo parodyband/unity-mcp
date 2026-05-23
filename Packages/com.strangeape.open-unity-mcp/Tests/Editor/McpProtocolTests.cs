@@ -61,6 +61,8 @@ namespace StrangeApe.OpenUnityMcp.Tests
             StringAssert.Contains("\"unity.list_packages\"", response.Body);
             StringAssert.Contains("\"unity.get_hierarchy\"", response.Body);
             StringAssert.Contains("\"unity.create_game_object\"", response.Body);
+            StringAssert.Contains("\"unity.create_game_objects\"", response.Body);
+            StringAssert.Contains("\"unity.set_transform\"", response.Body);
             StringAssert.Contains("\"unity.clear_console\"", response.Body);
             StringAssert.Contains("\"unity.add_component\"", response.Body);
             StringAssert.Contains("\"unity.get_serialized_properties\"", response.Body);

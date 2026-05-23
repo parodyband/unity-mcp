@@ -145,6 +145,55 @@ namespace StrangeApe.OpenUnityMcp.Tests
             StringAssert.Contains("\"closed\":true", ExtractToolText(closeResponse));
         }
 
+        [Test]
+        public void SceneToolsCreateAndSetTransforms()
+        {
+            var createResponse = CallTool(
+                "unity.create_game_object",
+                "\"name\":\"OpenUnityMcpTransformSphere\",\"primitiveType\":\"Sphere\",\"position\":{\"x\":1,\"y\":2,\"z\":3},\"scale\":{\"x\":2,\"y\":2,\"z\":2},\"select\":false");
+            var sphere = GameObject.Find("OpenUnityMcpTransformSphere");
+
+            Assert.NotNull(sphere);
+            Assert.AreEqual(new Vector3(1f, 2f, 3f), sphere.transform.position);
+            Assert.AreEqual(new Vector3(2f, 2f, 2f), sphere.transform.localScale);
+            StringAssert.Contains("\"position\"", ExtractToolText(createResponse));
+
+            var setResponse = CallTool(
+                "unity.set_transform",
+                "\"objectId\":\"" + UnityMcpObjectUtility.GetObjectId(sphere) + "\",\"localPosition\":{\"x\":4,\"y\":5,\"z\":6},\"localScale\":{\"x\":1,\"y\":2,\"z\":3}");
+
+            Assert.AreEqual(new Vector3(4f, 5f, 6f), sphere.transform.localPosition);
+            Assert.AreEqual(new Vector3(1f, 2f, 3f), sphere.transform.localScale);
+            StringAssert.Contains("\"changed\":true", ExtractToolText(setResponse));
+        }
+
+        [Test]
+        public void SceneToolsBatchCreateObjectsWithParentIndex()
+        {
+            var response = CallTool(
+                "unity.create_game_objects",
+                "\"objects\":[" +
+                "{\"name\":\"OpenUnityMcpSnowmanRoot\"}," +
+                "{\"name\":\"OpenUnityMcpSnowmanBody\",\"primitiveType\":\"Sphere\",\"parentIndex\":0,\"localPosition\":{\"x\":0,\"y\":1,\"z\":0},\"scale\":{\"x\":2,\"y\":2,\"z\":2}}," +
+                "{\"name\":\"OpenUnityMcpSnowmanHead\",\"primitiveType\":\"Sphere\",\"parentIndex\":0,\"localPosition\":{\"x\":0,\"y\":2.8,\"z\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}" +
+                "],\"selectLast\":false");
+
+            var root = GameObject.Find("OpenUnityMcpSnowmanRoot");
+            var body = GameObject.Find("OpenUnityMcpSnowmanBody");
+            var head = GameObject.Find("OpenUnityMcpSnowmanHead");
+
+            Assert.NotNull(root);
+            Assert.NotNull(body);
+            Assert.NotNull(head);
+            Assert.AreEqual(root.transform, body.transform.parent);
+            Assert.AreEqual(root.transform, head.transform.parent);
+            Assert.AreEqual(new Vector3(0f, 1f, 0f), body.transform.localPosition);
+            Assert.That(head.transform.localPosition.x, Is.EqualTo(0f).Within(0.0001f));
+            Assert.That(head.transform.localPosition.y, Is.EqualTo(2.8f).Within(0.0001f));
+            Assert.That(head.transform.localPosition.z, Is.EqualTo(0f).Within(0.0001f));
+            StringAssert.Contains("\"count\":3", ExtractToolText(response));
+        }
+
         private static McpProtocolResponse CallTool(string toolName, string argumentsJson)
         {
             return McpProtocol.Handle("{\"jsonrpc\":\"2.0\",\"id\":\"call\",\"method\":\"tools/call\",\"params\":{\"name\":\"" + toolName + "\",\"arguments\":{" + argumentsJson + "}}}");

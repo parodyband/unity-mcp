@@ -99,6 +99,11 @@ namespace StrangeApe.OpenUnityMcp
                 "assetPath", AssetDatabase.GetAssetPath(obj),
                 "scenePath", gameObject != null ? gameObject.scene.path : string.Empty,
                 "hierarchyPath", gameObject != null ? UnityMcpSceneTools.GetHierarchyPath(gameObject.transform) : string.Empty);
+            if (gameObject != null)
+            {
+                payload["gameObject"] = UnityMcpSceneTools.DescribeGameObject(gameObject);
+            }
+
             UnityMcpObjectUtility.AddObjectId(payload, obj);
             return payload;
         }

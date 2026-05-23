@@ -53,12 +53,14 @@ namespace StrangeApe.OpenUnityMcp
             UnityMcpTools.RefreshAssets,
             UnityMcpSceneTools.CloseScene,
             UnityMcpSceneTools.CreateGameObject,
+            UnityMcpSceneTools.CreateGameObjects,
             UnityMcpSceneTools.GetHierarchy,
             UnityMcpSceneTools.GetOpenScenes,
             UnityMcpSceneTools.OpenScene,
             UnityMcpSceneTools.SaveAllScenes,
             UnityMcpSceneTools.SaveScene,
             UnityMcpSceneTools.SelectObject,
+            UnityMcpSceneTools.SetTransform,
             UnityMcpTools.WriteAssetText
         };
 
@@ -166,9 +168,27 @@ namespace StrangeApe.OpenUnityMcp
             return property;
         }
 
+        public static Dictionary<string, object> NumberProperty(string description)
+        {
+            return McpJson.Object("type", "number", "description", description);
+        }
+
         public static Dictionary<string, object> BooleanProperty(string description)
         {
             return McpJson.Object("type", "boolean", "description", description);
+        }
+
+        public static Dictionary<string, object> Vector3Property(string description)
+        {
+            return McpJson.Object(
+                "type", "object",
+                "description", description,
+                "properties", McpJson.Object(
+                    "x", NumberProperty("X component."),
+                    "y", NumberProperty("Y component."),
+                    "z", NumberProperty("Z component.")),
+                "required", McpJson.Array("x", "y", "z"),
+                "additionalProperties", false);
         }
     }
 }

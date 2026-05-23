@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -76,13 +77,60 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool CreateGameObject = new McpTool(
             "unity.create_game_object",
-            "Create an empty GameObject or primitive in the active scene.",
+            "Create an empty GameObject or primitive in the active scene with an optional explicit transform.",
             McpToolRegistry.ObjectSchema(
                 "name", McpToolRegistry.StringProperty("New GameObject name."),
                 "primitiveType", McpToolRegistry.StringProperty("Optional Unity primitive type: Cube, Sphere, Capsule, Cylinder, Plane, Quad."),
                 "parentObjectId", McpToolRegistry.StringProperty("Optional parent GameObject or Transform objectId."),
+                "position", McpToolRegistry.Vector3Property("Optional world position."),
+                "localPosition", McpToolRegistry.Vector3Property("Optional local position. Use this when parentObjectId is set."),
+                "rotationEuler", McpToolRegistry.Vector3Property("Optional world rotation in degrees."),
+                "localRotationEuler", McpToolRegistry.Vector3Property("Optional local rotation in degrees. Use this when parentObjectId is set."),
+                "scale", McpToolRegistry.Vector3Property("Optional local scale."),
+                "localScale", McpToolRegistry.Vector3Property("Optional local scale."),
                 "select", McpToolRegistry.BooleanProperty("Select the created GameObject.")),
             CreateGameObjectImpl);
+
+        public static readonly McpTool CreateGameObjects = new McpTool(
+            "unity.create_game_objects",
+            "Create multiple empty GameObjects or primitives in one scene mutation. Supports explicit transforms and parenting by objectId or prior batch index.",
+            McpToolRegistry.ObjectSchema(
+                "objects", McpJson.Object(
+                    "type", "array",
+                    "description", "Objects to create. Each item supports name, primitiveType, parentObjectId, parentIndex, position/localPosition, rotationEuler/localRotationEuler, and scale/localScale.",
+                    "minItems", 1,
+                    "maxItems", 100,
+                    "items", McpJson.Object(
+                        "type", "object",
+                        "properties", McpJson.Object(
+                            "name", McpToolRegistry.StringProperty("New GameObject name."),
+                            "primitiveType", McpToolRegistry.StringProperty("Optional Unity primitive type: Cube, Sphere, Capsule, Cylinder, Plane, Quad."),
+                            "parentObjectId", McpToolRegistry.StringProperty("Optional existing parent GameObject or Transform objectId."),
+                            "parentIndex", McpToolRegistry.IntegerProperty("Optional index of a previously created object in this batch to use as parent.", 0, 99),
+                            "position", McpToolRegistry.Vector3Property("Optional world position."),
+                            "localPosition", McpToolRegistry.Vector3Property("Optional local position. Use this when parentObjectId or parentIndex is set."),
+                            "rotationEuler", McpToolRegistry.Vector3Property("Optional world rotation in degrees."),
+                            "localRotationEuler", McpToolRegistry.Vector3Property("Optional local rotation in degrees. Use this when parentObjectId or parentIndex is set."),
+                            "scale", McpToolRegistry.Vector3Property("Optional local scale."),
+                            "localScale", McpToolRegistry.Vector3Property("Optional local scale.")),
+                        "additionalProperties", false)),
+                "selectLast", McpToolRegistry.BooleanProperty("Select the last created GameObject."),
+                new[] { "objects" }),
+            CreateGameObjectsImpl);
+
+        public static readonly McpTool SetTransform = new McpTool(
+            "unity.set_transform",
+            "Set transform values on an existing scene GameObject. Returns the final transform read back from Unity.",
+            McpToolRegistry.ObjectSchema(
+                "objectId", McpToolRegistry.StringProperty("Target GameObject, Component, or Transform objectId."),
+                "position", McpToolRegistry.Vector3Property("Optional world position."),
+                "localPosition", McpToolRegistry.Vector3Property("Optional local position."),
+                "rotationEuler", McpToolRegistry.Vector3Property("Optional world rotation in degrees."),
+                "localRotationEuler", McpToolRegistry.Vector3Property("Optional local rotation in degrees."),
+                "scale", McpToolRegistry.Vector3Property("Optional local scale."),
+                "localScale", McpToolRegistry.Vector3Property("Optional local scale."),
+                new[] { "objectId" }),
+            SetTransformImpl);
 
         private static List<object> GetOpenScenesArray()
         {
@@ -294,35 +342,92 @@ namespace StrangeApe.OpenUnityMcp
         private static Dictionary<string, object> CreateGameObjectImpl(Dictionary<string, object> args)
         {
             var name = McpJson.AsString(args, "name", "GameObject");
-            var primitiveType = McpJson.AsString(args, "primitiveType");
-            var parentObjectId = McpJson.AsString(args, "parentObjectId");
             var select = McpJson.AsBool(args, "select", true);
 
-            var gameObject = CreateObject(name, primitiveType);
-            Undo.RegisterCreatedObjectUndo(gameObject, "Create MCP GameObject");
+            var gameObject = CreateGameObjectFromArgs(args, null, name);
 
-            if (!string.IsNullOrEmpty(parentObjectId))
-            {
-                var parent = UnityMcpObjectUtility.ResolveObjectById(parentObjectId);
-                var parentGameObject = parent as GameObject;
-                var parentComponent = parent as Component;
-                var parentTransform = parentGameObject != null ? parentGameObject.transform : parentComponent != null ? parentComponent.transform : parent as Transform;
-                if (parentTransform == null)
-                {
-                    UnityEngine.Object.DestroyImmediate(gameObject);
-                    return McpToolRegistry.ToolText("Parent objectId is not a GameObject or Transform.", true);
-                }
-
-                Undo.SetTransformParent(gameObject.transform, parentTransform, "Parent MCP GameObject");
-            }
-
-            gameObject.name = name;
             if (select)
             {
                 Selection.activeObject = gameObject;
             }
 
-            return JsonText(McpJson.Object("created", UnityMcpEditorTools.DescribeObject(gameObject)));
+            return JsonText(McpJson.Object("created", DescribeGameObject(gameObject)));
+        }
+
+        private static Dictionary<string, object> CreateGameObjectsImpl(Dictionary<string, object> args)
+        {
+            if (!args.TryGetValue("objects", out var rawObjects))
+            {
+                throw new ArgumentException("Missing required argument: objects");
+            }
+
+            var objectArgs = McpJson.AsArray(rawObjects);
+            if (objectArgs == null)
+            {
+                throw new ArgumentException("objects must be an array.");
+            }
+
+            if (objectArgs.Count < 1 || objectArgs.Count > 100)
+            {
+                throw new ArgumentException("objects must contain between 1 and 100 items.");
+            }
+
+            var createdObjects = new List<GameObject>();
+            var describedObjects = new List<object>();
+            try
+            {
+                for (var i = 0; i < objectArgs.Count; i++)
+                {
+                    var item = McpJson.AsObject(objectArgs[i]);
+                    if (item == null)
+                    {
+                        throw new ArgumentException("objects[" + i + "] must be an object.");
+                    }
+
+                    var gameObject = CreateGameObjectFromArgs(item, createdObjects, McpJson.AsString(item, "name", "GameObject"));
+                    createdObjects.Add(gameObject);
+                    describedObjects.Add(McpJson.Object(
+                        "index", i,
+                        "object", DescribeGameObject(gameObject)));
+                }
+            }
+            catch
+            {
+                foreach (var createdObject in createdObjects)
+                {
+                    if (createdObject != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(createdObject);
+                    }
+                }
+
+                throw;
+            }
+
+            if (McpJson.AsBool(args, "selectLast", false) && createdObjects.Count > 0)
+            {
+                Selection.activeObject = createdObjects[createdObjects.Count - 1];
+            }
+
+            return JsonText(McpJson.Object(
+                "count", createdObjects.Count,
+                "created", describedObjects));
+        }
+
+        private static Dictionary<string, object> SetTransformImpl(Dictionary<string, object> args)
+        {
+            var objectId = RequireString(args, "objectId");
+            var resolved = UnityMcpObjectUtility.ResolveObjectById(objectId);
+            var transform = ResolveTransform(resolved);
+            if (transform == null)
+            {
+                return McpToolRegistry.ToolText("objectId is not a GameObject, Component, or Transform.", true);
+            }
+
+            ApplyTransform(transform, args);
+            return JsonText(McpJson.Object(
+                "changed", true,
+                "object", DescribeGameObject(transform.gameObject)));
         }
 
         internal static string GetHierarchyPath(Transform transform)
@@ -380,10 +485,46 @@ namespace StrangeApe.OpenUnityMcp
                 "tag", transform.gameObject.tag,
                 "layer", transform.gameObject.layer,
                 "path", GetHierarchyPath(transform),
+                "transform", DescribeTransformValues(transform),
                 "componentTypes", GetComponentTypes(transform.gameObject),
                 "children", children);
             UnityMcpObjectUtility.AddObjectId(payload, transform.gameObject);
             return payload;
+        }
+
+        internal static Dictionary<string, object> DescribeGameObject(GameObject gameObject)
+        {
+            var payload = McpJson.Object(
+                "name", gameObject.name,
+                "type", typeof(GameObject).FullName,
+                "scenePath", gameObject.scene.path,
+                "hierarchyPath", GetHierarchyPath(gameObject.transform),
+                "activeSelf", gameObject.activeSelf,
+                "activeInHierarchy", gameObject.activeInHierarchy,
+                "tag", gameObject.tag,
+                "layer", gameObject.layer,
+                "transform", DescribeTransformValues(gameObject.transform),
+                "componentTypes", GetComponentTypes(gameObject));
+            UnityMcpObjectUtility.AddObjectId(payload, gameObject);
+            return payload;
+        }
+
+        private static Dictionary<string, object> DescribeTransformValues(Transform transform)
+        {
+            return McpJson.Object(
+                "position", Vector3Payload(transform.position),
+                "localPosition", Vector3Payload(transform.localPosition),
+                "rotationEuler", Vector3Payload(transform.rotation.eulerAngles),
+                "localRotationEuler", Vector3Payload(transform.localRotation.eulerAngles),
+                "localScale", Vector3Payload(transform.localScale));
+        }
+
+        private static Dictionary<string, object> Vector3Payload(Vector3 value)
+        {
+            return McpJson.Object(
+                "x", value.x,
+                "y", value.y,
+                "z", value.z);
         }
 
         private static List<object> GetComponentTypes(GameObject gameObject)
@@ -410,6 +551,183 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             return GameObject.CreatePrimitive(parsed);
+        }
+
+        private static GameObject CreateGameObjectFromArgs(Dictionary<string, object> args, List<GameObject> batchObjects, string fallbackName)
+        {
+            var name = McpJson.AsString(args, "name", fallbackName);
+            var primitiveType = McpJson.AsString(args, "primitiveType");
+            GameObject gameObject = null;
+            try
+            {
+                gameObject = CreateObject(name, primitiveType);
+                Undo.RegisterCreatedObjectUndo(gameObject, "Create MCP GameObject");
+                gameObject.name = name;
+
+                var parentTransform = ResolveParentTransform(args, batchObjects);
+                if (parentTransform != null)
+                {
+                    Undo.SetTransformParent(gameObject.transform, parentTransform, "Parent MCP GameObject");
+                    ApplyDefaultLocalTransformForParentedObject(gameObject.transform, args);
+                }
+
+                ApplyTransform(gameObject.transform, args);
+                return gameObject;
+            }
+            catch
+            {
+                if (gameObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(gameObject);
+                }
+
+                throw;
+            }
+        }
+
+        private static Transform ResolveParentTransform(Dictionary<string, object> args, List<GameObject> batchObjects)
+        {
+            if (args.TryGetValue("parentIndex", out var parentIndexValue))
+            {
+                if (batchObjects == null)
+                {
+                    throw new ArgumentException("parentIndex can only be used with unity.create_game_objects.");
+                }
+
+                var parentIndex = Convert.ToInt32(parentIndexValue, CultureInfo.InvariantCulture);
+                if (parentIndex < 0 || parentIndex >= batchObjects.Count)
+                {
+                    throw new ArgumentException("parentIndex must reference a previously created object.");
+                }
+
+                return batchObjects[parentIndex].transform;
+            }
+
+            var parentObjectId = McpJson.AsString(args, "parentObjectId");
+            if (string.IsNullOrEmpty(parentObjectId))
+            {
+                return null;
+            }
+
+            var parent = UnityMcpObjectUtility.ResolveObjectById(parentObjectId);
+            var parentTransform = ResolveTransform(parent);
+            if (parentTransform == null)
+            {
+                throw new ArgumentException("Parent objectId is not a GameObject, Component, or Transform.");
+            }
+
+            return parentTransform;
+        }
+
+        private static Transform ResolveTransform(UnityEngine.Object obj)
+        {
+            if (obj is GameObject gameObject)
+            {
+                return gameObject.transform;
+            }
+
+            if (obj is Component component)
+            {
+                return component.transform;
+            }
+
+            return obj as Transform;
+        }
+
+        private static void ApplyDefaultLocalTransformForParentedObject(Transform transform, Dictionary<string, object> args)
+        {
+            if (!HasVector3(args, "localPosition") && !HasVector3(args, "position"))
+            {
+                transform.localPosition = Vector3.zero;
+            }
+
+            if (!HasVector3(args, "localRotationEuler") && !HasVector3(args, "rotationEuler"))
+            {
+                transform.localRotation = Quaternion.identity;
+            }
+        }
+
+        private static void ApplyTransform(Transform transform, Dictionary<string, object> args)
+        {
+            Undo.RecordObject(transform, "Set MCP Transform");
+
+            if (TryReadVector3(args, "localPosition", out var localPosition))
+            {
+                transform.localPosition = localPosition;
+            }
+            else if (TryReadVector3(args, "position", out var position))
+            {
+                transform.position = position;
+            }
+
+            if (TryReadVector3(args, "localRotationEuler", out var localRotationEuler))
+            {
+                transform.localRotation = Quaternion.Euler(localRotationEuler);
+            }
+            else if (TryReadVector3(args, "rotationEuler", out var rotationEuler))
+            {
+                transform.rotation = Quaternion.Euler(rotationEuler);
+            }
+
+            if (TryReadVector3(args, "localScale", out var localScale))
+            {
+                transform.localScale = localScale;
+            }
+            else if (TryReadVector3(args, "scale", out var scale))
+            {
+                transform.localScale = scale;
+            }
+        }
+
+        private static bool HasVector3(Dictionary<string, object> args, string key)
+        {
+            return args != null && args.TryGetValue(key, out var rawValue) && rawValue != null;
+        }
+
+        private static bool TryReadVector3(Dictionary<string, object> args, string key, out Vector3 value)
+        {
+            value = default;
+            if (args == null || !args.TryGetValue(key, out var rawValue) || rawValue == null)
+            {
+                return false;
+            }
+
+            var map = rawValue as Dictionary<string, object>;
+            if (map != null)
+            {
+                value = new Vector3(
+                    ReadFloat(map, "x"),
+                    ReadFloat(map, "y"),
+                    ReadFloat(map, "z"));
+                return true;
+            }
+
+            var array = rawValue as List<object>;
+            if (array != null)
+            {
+                if (array.Count != 3)
+                {
+                    throw new ArgumentException(key + " array must have exactly three numeric values.");
+                }
+
+                value = new Vector3(
+                    Convert.ToSingle(array[0], CultureInfo.InvariantCulture),
+                    Convert.ToSingle(array[1], CultureInfo.InvariantCulture),
+                    Convert.ToSingle(array[2], CultureInfo.InvariantCulture));
+                return true;
+            }
+
+            throw new ArgumentException(key + " must be an object with x, y, z or an array of three numbers.");
+        }
+
+        private static float ReadFloat(Dictionary<string, object> map, string key)
+        {
+            if (!map.TryGetValue(key, out var value) || value == null)
+            {
+                throw new ArgumentException("Vector3 is missing component: " + key);
+            }
+
+            return Convert.ToSingle(value, CultureInfo.InvariantCulture);
         }
 
         private static IEnumerable<Scene> EnumerateOpenScenes()

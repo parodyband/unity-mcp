@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Added explicit transform inputs and readback for scene object creation.
+- Added `unity.set_transform` for correcting existing scene object transforms.
+- Added `unity.create_game_objects` for batch primitive and hierarchy creation.
+
 ## 0.2.0
 
 - Added a Scene View toolbar badge for server status and quick start/stop access.
