@@ -13,6 +13,8 @@ namespace StrangeApe.OpenUnityMcp
             McpToolRegistry.ObjectSchema(
                 "objectId", McpToolRegistry.StringProperty("Target GameObject or Component objectId from another tool result."),
                 "path", McpToolRegistry.StringProperty("Optional target asset path for prefab assets."),
+                "childPath", McpToolRegistry.StringProperty("Optional child Transform path below the target root."),
+                "childName", McpToolRegistry.StringProperty("Optional child Transform name below the target root."),
                 "componentType", McpToolRegistry.StringProperty("Component type name, such as Rigidbody, UnityEngine.BoxCollider, or a script class name."),
                 new[] { "componentType" }),
             AddComponentImpl);
@@ -22,7 +24,9 @@ namespace StrangeApe.OpenUnityMcp
             "List Components on a GameObject selected by objectId, asset path, or current selection.",
             McpToolRegistry.ObjectSchema(
                 "objectId", McpToolRegistry.StringProperty("Target GameObject or Component objectId from another tool result."),
-                "path", McpToolRegistry.StringProperty("Optional target asset path.")),
+                "path", McpToolRegistry.StringProperty("Optional target asset path."),
+                "childPath", McpToolRegistry.StringProperty("Optional child Transform path below the target root."),
+                "childName", McpToolRegistry.StringProperty("Optional child Transform name below the target root.")),
             GetComponentsImpl);
 
         public static readonly McpTool GetSerializedProperties = new McpTool(
@@ -57,6 +61,11 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             var componentType = UnityMcpObjectUtility.ResolveType(RequireString(args, "componentType"), typeof(Component));
+            if (PrefabUtility.IsPartOfPrefabAsset(gameObject))
+            {
+                return AddComponentToPrefabAsset(gameObject, componentType);
+            }
+
             var component = Undo.AddComponent(gameObject, componentType);
             EditorUtility.SetDirty(gameObject);
 
@@ -180,6 +189,68 @@ namespace StrangeApe.OpenUnityMcp
             UnityMcpObjectUtility.AddObjectId(payload, component);
             UnityMcpObjectUtility.AddObjectId(payload, component.gameObject, "gameObject");
             return payload;
+        }
+
+        private static Dictionary<string, object> AddComponentToPrefabAsset(GameObject assetObject, Type componentType)
+        {
+            var prefabPath = AssetDatabase.GetAssetPath(assetObject);
+            if (string.IsNullOrEmpty(prefabPath) || !prefabPath.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+            {
+                return McpToolRegistry.ToolText("Target is part of a prefab asset but its asset path could not be resolved.", true);
+            }
+
+            var assetRoot = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (assetRoot == null)
+            {
+                return McpToolRegistry.ToolText("Prefab asset root not found: " + prefabPath, true);
+            }
+
+            var relativePath = UnityMcpObjectUtility.GetRelativeHierarchyPath(assetRoot.transform, assetObject.transform);
+            var componentIndex = assetObject.GetComponents(componentType).Length;
+            GameObject contentsRoot = null;
+            try
+            {
+                contentsRoot = PrefabUtility.LoadPrefabContents(prefabPath);
+                var target = string.IsNullOrEmpty(relativePath)
+                    ? contentsRoot
+                    : UnityMcpObjectUtility.FindChildByPath(contentsRoot.transform, relativePath)?.gameObject;
+
+                if (target == null)
+                {
+                    return McpToolRegistry.ToolText("Child path no longer exists in prefab contents: " + relativePath, true);
+                }
+
+                target.AddComponent(componentType);
+                bool saved;
+                PrefabUtility.SaveAsPrefabAsset(contentsRoot, prefabPath, out saved);
+                if (!saved)
+                {
+                    return McpToolRegistry.ToolText("Unity failed to save prefab asset: " + prefabPath, true);
+                }
+            }
+            finally
+            {
+                if (contentsRoot != null)
+                {
+                    PrefabUtility.UnloadPrefabContents(contentsRoot);
+                }
+            }
+
+            AssetDatabase.ImportAsset(prefabPath);
+            var savedRoot = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            var savedTarget = savedRoot == null
+                ? null
+                : string.IsNullOrEmpty(relativePath)
+                    ? savedRoot
+                    : UnityMcpObjectUtility.FindChildByPath(savedRoot.transform, relativePath)?.gameObject;
+            var savedComponents = savedTarget != null ? savedTarget.GetComponents(componentType) : Array.Empty<Component>();
+            var savedComponent = savedComponents.Length > componentIndex ? savedComponents[componentIndex] : null;
+
+            return JsonText(McpJson.Object(
+                "gameObject", savedTarget != null ? UnityMcpEditorTools.DescribeObject(savedTarget) : McpJson.Object(),
+                "component", DescribeComponent(savedComponent),
+                "prefabPath", prefabPath,
+                "saved", true));
         }
 
         private static bool TrySetProperty(SerializedProperty property, Dictionary<string, object> args, out string error)
@@ -340,7 +411,11 @@ namespace StrangeApe.OpenUnityMcp
 
         private static GameObject ResolveGameObject(Dictionary<string, object> args)
         {
-            return UnityMcpObjectUtility.ResolveGameObject(McpJson.AsString(args, "objectId"), McpJson.AsString(args, "path"));
+            return UnityMcpObjectUtility.ResolveGameObject(
+                McpJson.AsString(args, "objectId"),
+                McpJson.AsString(args, "path"),
+                McpJson.AsString(args, "childPath"),
+                McpJson.AsString(args, "childName"));
         }
 
         private static string RequireString(Dictionary<string, object> args, string name)

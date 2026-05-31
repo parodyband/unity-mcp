@@ -16,6 +16,26 @@ namespace StrangeApe.OpenUnityMcp
                 new[] { "path" }),
             CreateFolderImpl);
 
+        public static readonly McpTool CreateAsset = new McpTool(
+            "unity.create_asset",
+            "Create a ScriptableObject asset under Assets or Packages.",
+            McpToolRegistry.ObjectSchema(
+                "typeName", McpToolRegistry.StringProperty("ScriptableObject type name, such as MyNamespace.BoarHerdSettings or BoarHerdSettings."),
+                "path", McpToolRegistry.StringProperty("Project-relative .asset path under Assets or Packages."),
+                "createDirectories", McpToolRegistry.BooleanProperty("Create missing parent directories."),
+                new[] { "typeName", "path" }),
+            CreateScriptableObjectImpl);
+
+        public static readonly McpTool CreateScriptableObject = new McpTool(
+            "unity.create_scriptable_object",
+            "Create a ScriptableObject asset under Assets or Packages.",
+            McpToolRegistry.ObjectSchema(
+                "typeName", McpToolRegistry.StringProperty("ScriptableObject type name, such as MyNamespace.BoarHerdSettings or BoarHerdSettings."),
+                "path", McpToolRegistry.StringProperty("Project-relative .asset path under Assets or Packages."),
+                "createDirectories", McpToolRegistry.BooleanProperty("Create missing parent directories."),
+                new[] { "typeName", "path" }),
+            CreateScriptableObjectImpl);
+
         public static readonly McpTool CopyAsset = new McpTool(
             "unity.copy_asset",
             "Copy an asset or folder under Assets or Packages.",
@@ -87,6 +107,43 @@ namespace StrangeApe.OpenUnityMcp
                 "path", path,
                 "created", !string.IsNullOrEmpty(guid),
                 "guid", guid));
+        }
+
+        private static Dictionary<string, object> CreateScriptableObjectImpl(Dictionary<string, object> args)
+        {
+            var type = UnityMcpObjectUtility.ResolveType(RequireString(args, "typeName"), typeof(ScriptableObject));
+            var path = UnityMcpPathUtility.ResolveAssetOrPackageRelativePath(RequireString(args, "path"));
+            if (!path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase))
+            {
+                return McpToolRegistry.ToolText("ScriptableObject asset path must end with .asset.", true);
+            }
+
+            if (AssetExists(path))
+            {
+                return McpToolRegistry.ToolText("Asset already exists: " + path, true);
+            }
+
+            EnsureNotProtectedRoot(path);
+            var parentPath = Path.GetDirectoryName(path)?.Replace('\\', '/');
+            if (!string.IsNullOrEmpty(parentPath) && !AssetDatabase.IsValidFolder(parentPath) && !McpJson.AsBool(args, "createDirectories", true))
+            {
+                return McpToolRegistry.ToolText("Parent directory does not exist: " + parentPath, true);
+            }
+
+            if (McpJson.AsBool(args, "createDirectories", true))
+            {
+                EnsureParentFolders(parentPath);
+            }
+
+            var asset = ScriptableObject.CreateInstance(type);
+            AssetDatabase.CreateAsset(asset, path);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            return JsonText(McpJson.Object(
+                "path", path,
+                "created", true,
+                "asset", UnityMcpEditorTools.DescribeObject(asset)));
         }
 
         private static Dictionary<string, object> CopyAssetImpl(Dictionary<string, object> args)

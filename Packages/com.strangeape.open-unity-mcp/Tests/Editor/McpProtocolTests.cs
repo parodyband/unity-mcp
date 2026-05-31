@@ -54,10 +54,13 @@ namespace StrangeApe.OpenUnityMcp.Tests
 
             StringAssert.Contains("\"unity.get_project_info\"", response.Body);
             StringAssert.Contains("\"unity.get_asset_metadata\"", response.Body);
+            StringAssert.Contains("\"unity.create_asset\"", response.Body);
             StringAssert.Contains("\"unity.create_folder\"", response.Body);
+            StringAssert.Contains("\"unity.create_scriptable_object\"", response.Body);
             StringAssert.Contains("\"unity.copy_asset\"", response.Body);
             StringAssert.Contains("\"unity.move_asset\"", response.Body);
             StringAssert.Contains("\"unity.delete_asset\"", response.Body);
+            StringAssert.Contains("\"unity.execute_csharp\"", response.Body);
             StringAssert.Contains("\"unity.list_packages\"", response.Body);
             StringAssert.Contains("\"unity.get_hierarchy\"", response.Body);
             StringAssert.Contains("\"unity.create_game_object\"", response.Body);
@@ -69,8 +72,11 @@ namespace StrangeApe.OpenUnityMcp.Tests
             StringAssert.Contains("\"unity.clear_console\"", response.Body);
             StringAssert.Contains("\"unity.add_component\"", response.Body);
             StringAssert.Contains("\"unity.get_serialized_properties\"", response.Body);
+            StringAssert.Contains("\"unity.find_child\"", response.Body);
             StringAssert.Contains("\"unity.instantiate_prefab\"", response.Body);
             StringAssert.Contains("\"unity.save_as_prefab_asset\"", response.Body);
+            StringAssert.Contains("\"unity.save_prefab_asset\"", response.Body);
+            StringAssert.Contains("\"unity.apply_prefab_changes\"", response.Body);
             StringAssert.Contains("\"unity.get_compilation_status\"", response.Body);
             StringAssert.Contains("\"unity.validate_project\"", response.Body);
             StringAssert.Contains("\"unity.get_build_settings\"", response.Body);

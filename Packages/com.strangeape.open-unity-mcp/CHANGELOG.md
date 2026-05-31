@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0
+
+- Added prefab child targeting, ScriptableObject asset creation, prefab save/apply tools, C# fallback execution, and expanded prefab inspection metadata.
+- Fixed the HTTP server test so it no longer blocks Unity main-thread dispatch while waiting for tool listings.
+
 ## 0.6.0
 
 - Fixed MCP startup failures by dispatching tool listing and tool enablement checks through the Unity main thread.

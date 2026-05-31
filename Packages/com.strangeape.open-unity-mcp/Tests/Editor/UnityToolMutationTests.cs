@@ -7,6 +7,10 @@ using UnityEngine.SceneManagement;
 
 namespace StrangeApe.OpenUnityMcp.Tests
 {
+    public sealed class OpenUnityMcpGeneratedSettings : ScriptableObject
+    {
+    }
+
     public sealed class UnityToolMutationTests
     {
         private const string GeneratedFolder = "Assets/OpenUnityMcpGenerated";
@@ -85,6 +89,56 @@ namespace StrangeApe.OpenUnityMcp.Tests
             var instantiateResponse = CallTool("unity.instantiate_prefab", "\"prefabPath\":\"" + prefabPath + "\",\"name\":\"OpenUnityMcpPrefabInstance\",\"select\":false");
             StringAssert.Contains("OpenUnityMcpPrefabInstance", ExtractToolText(instantiateResponse));
             Assert.NotNull(GameObject.Find("OpenUnityMcpPrefabInstance"));
+        }
+
+        [Test]
+        public void PrefabToolsFindChildAddComponentAndSavePrefabAsset()
+        {
+            var source = new GameObject("OpenUnityMcpPrefabRoot");
+            var child = new GameObject("Hit Collider");
+            child.transform.SetParent(source.transform);
+            var prefabPath = GeneratedFolder + "/ChildTarget.prefab";
+
+            var saveAsResponse = CallTool("unity.save_as_prefab_asset", "\"objectId\":\"" + UnityMcpObjectUtility.GetObjectId(source) + "\",\"path\":\"" + prefabPath + "\",\"createDirectories\":true");
+            StringAssert.Contains("\"saved\":true", ExtractToolText(saveAsResponse));
+
+            var infoResponse = CallTool("unity.get_prefab_info", "\"path\":\"" + prefabPath + "\"");
+            StringAssert.Contains("\"rootComponents\"", ExtractToolText(infoResponse));
+
+            var hierarchyResponse = CallTool("unity.get_hierarchy", "\"path\":\"" + prefabPath + "\",\"maxDepth\":4");
+            StringAssert.Contains("Hit Collider", ExtractToolText(hierarchyResponse));
+
+            var findResponse = CallTool("unity.find_child", "\"path\":\"" + prefabPath + "\",\"childPath\":\"Hit Collider\"");
+            var findPayload = ExtractToolJson(findResponse);
+            var childPayload = findPayload["child"] as System.Collections.Generic.Dictionary<string, object>;
+            Assert.IsNotNull(childPayload);
+            Assert.IsFalse(string.IsNullOrEmpty((string)childPayload["objectId"]));
+
+            var addResponse = CallTool("unity.add_component", "\"path\":\"" + prefabPath + "\",\"childPath\":\"Hit Collider\",\"componentType\":\"UnityEngine.Rigidbody\"");
+            StringAssert.Contains("\"saved\":true", ExtractToolText(addResponse));
+
+            var componentsResponse = CallTool("unity.get_components", "\"path\":\"" + prefabPath + "\",\"childPath\":\"Hit Collider\"");
+            StringAssert.Contains("UnityEngine.Rigidbody", ExtractToolText(componentsResponse));
+
+            var saveResponse = CallTool("unity.save_prefab_asset", "\"path\":\"" + prefabPath + "\"");
+            StringAssert.Contains("\"saved\":true", ExtractToolText(saveResponse));
+
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            var savedChild = prefab.transform.Find("Hit Collider");
+            Assert.NotNull(savedChild);
+            Assert.NotNull(savedChild.GetComponent<Rigidbody>());
+        }
+
+        [Test]
+        public void AssetToolsCreateScriptableObjectAsset()
+        {
+            var assetPath = GeneratedFolder + "/BoarHerdSettings.asset";
+            var response = CallTool(
+                "unity.create_scriptable_object",
+                "\"typeName\":\"" + typeof(OpenUnityMcpGeneratedSettings).FullName + "\",\"path\":\"" + assetPath + "\",\"createDirectories\":true");
+
+            StringAssert.Contains("\"created\":true", ExtractToolText(response));
+            Assert.NotNull(AssetDatabase.LoadAssetAtPath<OpenUnityMcpGeneratedSettings>(assetPath));
         }
 
         [Test]
@@ -211,6 +265,11 @@ namespace StrangeApe.OpenUnityMcp.Tests
             var content = result["content"] as System.Collections.Generic.List<object>;
             var first = content[0] as System.Collections.Generic.Dictionary<string, object>;
             return (string)first["text"];
+        }
+
+        private static System.Collections.Generic.Dictionary<string, object> ExtractToolJson(McpProtocolResponse response)
+        {
+            return McpJson.Parse(ExtractToolText(response)) as System.Collections.Generic.Dictionary<string, object>;
         }
     }
 }

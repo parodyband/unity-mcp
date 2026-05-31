@@ -10,6 +10,7 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 - `unity.list_packages`
 - `unity.set_play_mode`
 - `unity.execute_menu_item`
+- `unity.execute_csharp`
 - `unity.get_compilation_status`
 - `unity.validate_project`
 - `unity.request_script_compilation`
@@ -19,6 +20,8 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 
 - `unity.find_assets`
 - `unity.get_asset_metadata`
+- `unity.create_asset`
+- `unity.create_scriptable_object`
 - `unity.create_folder`
 - `unity.copy_asset`
 - `unity.move_asset`
@@ -40,10 +43,17 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 - `unity.get_console_logs`
 - `unity.clear_console`
 
+## C# Fallback
+
+- `unity.execute_csharp`
+
+`unity.execute_csharp` compiles transient editor C# under `Temp/OpenUnityMcp/ExecuteCSharp` and invokes a static method. By default, `code` is wrapped as statements inside `StrangeApe.OpenUnityMcp.Generated.OpenUnityMcpUserCode.Execute`; use `return` to return a value. Set `wrap=false` and provide `entryPoint` for full source. This tool can do anything editor C# can do and should be client approval-gated.
+
 ## Scenes And Hierarchy
 
 - `unity.get_open_scenes`
 - `unity.get_hierarchy`
+- `unity.find_child`
 - `unity.select_object`
 - `unity.create_game_object`
 - `unity.create_game_objects`
@@ -82,8 +92,13 @@ Example batch shape for a simple snowman:
 ## Prefabs
 
 - `unity.get_prefab_info`
+- `unity.find_child`
 - `unity.instantiate_prefab`
 - `unity.save_as_prefab_asset`
+- `unity.save_prefab_asset`
+- `unity.apply_prefab_changes`
+
+`unity.get_prefab_info` returns the prefab root object and root component IDs. `unity.get_hierarchy`, `unity.find_child`, `unity.get_components`, and `unity.add_component` accept `path`/`objectId` targets plus optional `childPath` or `childName` when you need to operate on a prefab child such as `Hit Collider` or `Display`. Use `unity.save_prefab_asset` after direct prefab asset edits, or `unity.apply_prefab_changes` to push scene prefab instance overrides back to the asset.
 
 ## Build
 

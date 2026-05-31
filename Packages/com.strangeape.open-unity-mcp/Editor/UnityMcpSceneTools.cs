@@ -21,9 +21,13 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool GetHierarchy = new McpTool(
             "unity.get_hierarchy",
-            "Read the open scene hierarchy with bounded depth and result count.",
+            "Read the open scene hierarchy or a target GameObject/prefab hierarchy with bounded depth and result count.",
             McpToolRegistry.ObjectSchema(
                 "scenePath", McpToolRegistry.StringProperty("Optional open scene path. Defaults to all open scenes."),
+                "objectId", McpToolRegistry.StringProperty("Optional root GameObject or Component objectId."),
+                "path", McpToolRegistry.StringProperty("Optional root prefab asset path under Assets or Packages."),
+                "childPath", McpToolRegistry.StringProperty("Optional child Transform path below the target root."),
+                "childName", McpToolRegistry.StringProperty("Optional child Transform name below the target root."),
                 "maxDepth", McpToolRegistry.IntegerProperty("Maximum transform depth to include.", 0, 16),
                 "limit", McpToolRegistry.IntegerProperty("Maximum GameObjects to include.", 1, 1000),
                 "includeInactive", McpToolRegistry.BooleanProperty("Include inactive GameObjects.")),
@@ -151,6 +155,27 @@ namespace StrangeApe.OpenUnityMcp
             var includeInactive = McpJson.AsBool(args, "includeInactive", true);
             var remaining = limit;
             var scenes = new List<object>();
+
+            if (!string.IsNullOrEmpty(McpJson.AsString(args, "objectId")) || !string.IsNullOrEmpty(McpJson.AsString(args, "path")))
+            {
+                var target = UnityMcpObjectUtility.ResolveGameObject(
+                    McpJson.AsString(args, "objectId"),
+                    McpJson.AsString(args, "path"),
+                    McpJson.AsString(args, "childPath"),
+                    McpJson.AsString(args, "childName"));
+                if (target == null)
+                {
+                    return McpToolRegistry.ToolText("Target is not a GameObject, Component, or prefab asset.", true);
+                }
+
+                var rootPayload = DescribeTransform(target.transform, 0, maxDepth, includeInactive, ref remaining);
+                return JsonText(McpJson.Object(
+                    "maxDepth", maxDepth,
+                    "limit", limit,
+                    "truncated", remaining <= 0,
+                    "target", DescribeGameObject(target),
+                    "root", rootPayload));
+            }
 
             for (var i = 0; i < SceneManager.sceneCount; i++)
             {
