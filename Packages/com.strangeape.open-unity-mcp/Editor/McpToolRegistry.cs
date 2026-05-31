@@ -98,6 +98,11 @@ namespace StrangeApe.OpenUnityMcp
 
         public static Dictionary<string, object> ListTools()
         {
+            return UnityMainThread.Invoke(ListToolsOnMainThread);
+        }
+
+        private static Dictionary<string, object> ListToolsOnMainThread()
+        {
             var tools = new List<object>();
             foreach (var tool in Tools)
             {
@@ -124,22 +129,27 @@ namespace StrangeApe.OpenUnityMcp
                     continue;
                 }
 
-                if (!OpenUnityMcpSettings.IsToolEnabled(tool.Name))
-                {
-                    return ToolText("Tool '" + tool.Name + "' is disabled in Open Unity MCP preferences.", true);
-                }
-
-                try
-                {
-                    return UnityMainThread.Invoke(() => tool.Execute(arguments));
-                }
-                catch (Exception ex)
-                {
-                    return ToolText("Tool failed: " + ex.Message, true);
-                }
+                return UnityMainThread.Invoke(() => CallOnMainThread(tool, arguments));
             }
 
             throw new InvalidOperationException("Unknown tool: " + name);
+        }
+
+        private static Dictionary<string, object> CallOnMainThread(McpTool tool, Dictionary<string, object> arguments)
+        {
+            if (!OpenUnityMcpSettings.IsToolEnabled(tool.Name))
+            {
+                return ToolText("Tool '" + tool.Name + "' is disabled in Open Unity MCP preferences.", true);
+            }
+
+            try
+            {
+                return tool.Execute(arguments);
+            }
+            catch (Exception ex)
+            {
+                return ToolText("Tool failed: " + ex.Message, true);
+            }
         }
 
         public static Dictionary<string, object> ToolText(string text, bool isError = false)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+- Fixed MCP startup failures by dispatching tool listing and tool enablement checks through the Unity main thread.
+
 ## 0.5.0
 
 - Moved server settings and client setup into `Preferences > Open Unity MCP`.
