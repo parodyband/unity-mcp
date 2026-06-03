@@ -16,6 +16,8 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 - `unity.request_script_compilation`
 - `unity.get_build_settings`
 
+`unity.request_script_compilation` is asynchronous from the agent's point of view. If Unity reloads assemblies after a successful compile, the in-process MCP server is unloaded and restarted when it was running before the reload, so clients must tolerate a brief disconnect. After requesting compilation, retry the server `/health` endpoint, then call `unity.get_compilation_status` with `includeConsole=true` and a suitable `logLimit` to collect post-compile diagnostics. The status payload includes reload markers such as `assemblyLoadSequence`, `serverWasRunningBeforeLastAssemblyReload`, and `serverReloadedSinceLastScriptCompilationRequest`.
+
 ## Assets
 
 - `unity.find_assets`
@@ -30,6 +32,8 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 - `unity.write_asset_text`
 - `unity.import_asset`
 - `unity.refresh_assets`
+
+`unity.write_asset_text` defers `AssetDatabase.Refresh()` by default for code-related files (`.cs`, `.asmdef`, `.asmref`, `.rsp`, and `.dll`) so agents can edit multiple files without forcing Unity to compile and reload assemblies mid-task. The tool result returns `requiresRefresh=true` and `nextTool="unity.refresh_assets"` when the write is pending import. Call `unity.refresh_assets` once after the batch of script/package edits is complete, then reconnect on `/health` if Unity reloads assemblies and call `unity.get_compilation_status` with `includeConsole=true`.
 
 ## Components And Serialized Properties
 

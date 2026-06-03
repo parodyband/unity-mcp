@@ -48,22 +48,27 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool WriteAssetText = new McpTool(
             "unity.write_asset_text",
-            "Write a UTF-8 text file under Assets or Packages and refresh the AssetDatabase.",
+            "Write a UTF-8 text file under Assets or Packages. Code-related files defer AssetDatabase refresh by default to avoid immediate script compilation.",
             McpToolRegistry.ObjectSchema(
                 "path", McpToolRegistry.StringProperty("Project-relative path under Assets or Packages."),
                 "text", McpToolRegistry.StringProperty("UTF-8 text to write."),
                 "createDirectories", McpToolRegistry.BooleanProperty("Create missing parent directories."),
+                "refresh", McpToolRegistry.BooleanProperty("Refresh the AssetDatabase after writing. Defaults to false for code-related files and true for other files."),
                 new[] { "path", "text" }),
             WriteAssetTextImpl);
 
         public static readonly McpTool RefreshAssets = new McpTool(
             "unity.refresh_assets",
-            "Refresh Unity's AssetDatabase.",
+            "Refresh Unity's AssetDatabase. This can compile code-related changes and temporarily disconnect the in-process MCP server during assembly reload.",
             McpToolRegistry.ObjectSchema(),
             _ =>
             {
+                UnityMcpReloadState.MarkScriptCompilationRequested();
                 AssetDatabase.Refresh();
-                return McpToolRegistry.ToolText("AssetDatabase refreshed.");
+                return JsonText(McpJson.Object(
+                    "refreshed", true,
+                    "serverMayTemporarilyDisconnect", true,
+                    "recommendedRecovery", CreateReconnectPayload()));
             });
 
         public static readonly McpTool GetConsoleLogs = new McpTool(
@@ -145,6 +150,11 @@ namespace StrangeApe.OpenUnityMcp
             var text = RequireString(args, "text");
             var createDirectories = McpJson.AsBool(args, "createDirectories", true);
             var fullPath = UnityMcpPathUtility.ResolveWritableProjectPath(relativePath, true);
+            var normalizedPath = UnityMcpPathUtility.NormalizeProjectRelativePath(relativePath);
+            var codeRelatedAsset = IsCodeRelatedAssetPath(normalizedPath);
+            var refresh = args != null && args.ContainsKey("refresh")
+                ? McpJson.AsBool(args, "refresh", false)
+                : !codeRelatedAsset;
             var directory = Path.GetDirectoryName(fullPath);
 
             if (!Directory.Exists(directory))
@@ -158,12 +168,37 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             File.WriteAllText(fullPath, text, new UTF8Encoding(false));
-            AssetDatabase.Refresh();
+            if (refresh)
+            {
+                if (codeRelatedAsset)
+                {
+                    UnityMcpReloadState.MarkScriptCompilationRequested();
+                }
 
-            return JsonText(McpJson.Object(
-                "path", UnityMcpPathUtility.NormalizeProjectRelativePath(relativePath),
+                AssetDatabase.Refresh();
+            }
+
+            var payload = McpJson.Object(
+                "path", normalizedPath,
                 "bytes", Encoding.UTF8.GetByteCount(text),
-                "refreshed", true));
+                "refreshed", refresh,
+                "requiresRefresh", !refresh,
+                "codeRelatedAsset", codeRelatedAsset);
+            if (!refresh)
+            {
+                payload["nextTool"] = "unity.refresh_assets";
+                payload["deferredRefreshReason"] = codeRelatedAsset
+                    ? "Code-related assets defer refresh by default to avoid immediate script compilation and MCP disconnect."
+                    : "refresh was false.";
+            }
+
+            if (refresh && codeRelatedAsset)
+            {
+                payload["serverMayTemporarilyDisconnect"] = true;
+                payload["recommendedRecovery"] = CreateReconnectPayload();
+            }
+
+            return JsonText(payload);
         }
 
         private static Dictionary<string, object> GetConsoleLogsImpl(Dictionary<string, object> args)
@@ -187,6 +222,28 @@ namespace StrangeApe.OpenUnityMcp
         private static Dictionary<string, object> JsonText(Dictionary<string, object> payload)
         {
             return McpToolRegistry.ToolText(McpJson.Stringify(payload));
+        }
+
+        private static bool IsCodeRelatedAssetPath(string path)
+        {
+            var extension = Path.GetExtension(path ?? string.Empty);
+            return string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(extension, ".asmdef", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(extension, ".asmref", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(extension, ".rsp", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(extension, ".dll", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Dictionary<string, object> CreateReconnectPayload()
+        {
+            var port = OpenUnityMcpServer.Port > 0 ? OpenUnityMcpServer.Port : OpenUnityMcpSettings.Port;
+            return McpJson.Object(
+                "healthUrl", "http://127.0.0.1:" + port + "/health",
+                "retryDelayMilliseconds", 500,
+                "nextTool", "unity.get_compilation_status",
+                "nextArguments", McpJson.Object(
+                    "includeConsole", true,
+                    "logLimit", 100));
         }
 
         private static string RequireString(Dictionary<string, object> args, string name)

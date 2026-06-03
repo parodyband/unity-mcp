@@ -107,6 +107,9 @@ namespace StrangeApe.OpenUnityMcp.Tests
             Assert.AreEqual(200, buildSettingsResponse.HttpStatus);
             StringAssert.Contains("activeBuildTarget", ExtractToolText(compilationResponse));
             StringAssert.Contains("isCompiling", ExtractToolText(compilationResponse));
+            StringAssert.Contains("assemblyLoadSequence", ExtractToolText(compilationResponse));
+            StringAssert.Contains("serverReloadedSinceLastScriptCompilationRequest", ExtractToolText(compilationResponse));
+            StringAssert.Contains("serverWasRunningBeforeLastAssemblyReload", ExtractToolText(compilationResponse));
             StringAssert.Contains("scenes", ExtractToolText(buildSettingsResponse));
         }
 

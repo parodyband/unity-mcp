@@ -91,7 +91,9 @@ namespace StrangeApe.OpenUnityMcp
                 "Constraints:\n" + constraints + "\n\n" +
                 "Use read-only resources first: unity://project/info, unity://scene/open-scenes, and unity://editor/selection. " +
                 "Prefer targeted tools over broad edits. Before mutating assets, scenes, prefabs, components, play mode, or menu items, explain the intended action and use the narrowest tool available. " +
-                "Keep generated files under Assets or Packages and preserve Unity .meta files.";
+                "Keep generated files under Assets or Packages and preserve Unity .meta files. " +
+                "When editing scripts or assembly definition files, batch unity.write_asset_text calls and call unity.refresh_assets once when ready to compile. " +
+                "After unity.request_script_compilation, expect the MCP server to disconnect briefly if Unity reloads assemblies; wait for /health to return before polling unity.get_compilation_status with includeConsole=true.";
 
             return PromptResult("Unity editor task prompt", text);
         }
@@ -120,4 +122,3 @@ namespace StrangeApe.OpenUnityMcp
         }
     }
 }
-

@@ -51,6 +51,12 @@ namespace StrangeApe.OpenUnityMcp.Tests
             {
                 AssetDatabase.DeleteAsset(GeneratedFolder);
             }
+
+            var generatedFullPath = Path.Combine(UnityMcpPathUtility.ProjectRoot, GeneratedFolder);
+            if (Directory.Exists(generatedFullPath))
+            {
+                Directory.Delete(generatedFullPath, true);
+            }
         }
 
         [Test]
@@ -155,6 +161,7 @@ namespace StrangeApe.OpenUnityMcp.Tests
 
             var writeResponse = CallTool("unity.write_asset_text", "\"path\":\"" + sourcePath + "\",\"text\":\"lifecycle\",\"createDirectories\":true");
             StringAssert.Contains(sourcePath, ExtractToolText(writeResponse));
+            StringAssert.Contains("\"refreshed\":true", ExtractToolText(writeResponse));
 
             var copyResponse = CallTool("unity.copy_asset", "\"sourcePath\":\"" + sourcePath + "\",\"destinationPath\":\"" + copiedPath + "\"");
             StringAssert.Contains("\"copied\":true", ExtractToolText(copyResponse));
@@ -172,6 +179,23 @@ namespace StrangeApe.OpenUnityMcp.Tests
             var deleteFolderResponse = CallTool("unity.delete_asset", "\"path\":\"" + folderPath + "\",\"recursive\":true");
             StringAssert.Contains("\"deleted\":true", ExtractToolText(deleteFolderResponse));
             Assert.IsFalse(AssetDatabase.IsValidFolder(folderPath));
+        }
+
+        [Test]
+        public void WriteAssetTextDefersRefreshForScriptAssetsByDefault()
+        {
+            var scriptPath = GeneratedFolder + "/DeferredCompile.cs";
+            var writeResponse = CallTool(
+                "unity.write_asset_text",
+                "\"path\":\"" + scriptPath + "\",\"text\":\"public sealed class OpenUnityMcpDeferredCompile {}\",\"createDirectories\":true");
+            var payload = ExtractToolJson(writeResponse);
+
+            Assert.AreEqual(scriptPath, payload["path"]);
+            Assert.IsFalse((bool)payload["refreshed"]);
+            Assert.IsTrue((bool)payload["requiresRefresh"]);
+            Assert.IsTrue((bool)payload["codeRelatedAsset"]);
+            Assert.AreEqual("unity.refresh_assets", payload["nextTool"]);
+            Assert.IsTrue(File.Exists(Path.Combine(UnityMcpPathUtility.ProjectRoot, scriptPath)));
         }
 
         [Test]

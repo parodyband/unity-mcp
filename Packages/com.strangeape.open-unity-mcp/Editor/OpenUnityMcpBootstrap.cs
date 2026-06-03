@@ -8,14 +8,23 @@ namespace StrangeApe.OpenUnityMcp
         static OpenUnityMcpBootstrap()
         {
             UnityMainThread.Initialize();
+            UnityMcpReloadState.MarkAssemblyLoaded();
             EditorApplication.quitting += OpenUnityMcpServer.Stop;
-            AssemblyReloadEvents.beforeAssemblyReload += OpenUnityMcpServer.Stop;
+            AssemblyReloadEvents.beforeAssemblyReload += BeforeAssemblyReload;
 
-            if (OpenUnityMcpSettings.AutoStart)
+            if (OpenUnityMcpSettings.AutoStart || UnityMcpReloadState.ShouldRestartServerAfterReload)
             {
-                EditorApplication.delayCall += () => OpenUnityMcpServer.Start(OpenUnityMcpSettings.Port);
+                var port = UnityMcpReloadState.ShouldRestartServerAfterReload
+                    ? UnityMcpReloadState.ServerPortBeforeReload
+                    : OpenUnityMcpSettings.Port;
+                EditorApplication.delayCall += () => OpenUnityMcpServer.Start(port);
             }
+        }
+
+        private static void BeforeAssemblyReload()
+        {
+            UnityMcpReloadState.MarkBeforeAssemblyReload(OpenUnityMcpServer.IsRunning, OpenUnityMcpServer.Port);
+            OpenUnityMcpServer.Stop();
         }
     }
 }
-

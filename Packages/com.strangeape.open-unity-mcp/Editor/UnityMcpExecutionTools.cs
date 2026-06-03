@@ -27,15 +27,24 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool RequestScriptCompilation = new McpTool(
             "unity.request_script_compilation",
-            "Ask Unity to recompile scripts.",
+            "Ask Unity to recompile scripts. A successful compile can reload assemblies, temporarily disconnecting this in-process MCP server; it restarts after reload if it was running, so reconnect on /health and then poll unity.get_compilation_status with includeConsole=true.",
             McpToolRegistry.ObjectSchema(),
             _ =>
             {
+                UnityMcpReloadState.MarkScriptCompilationRequested();
                 CompilationPipeline.RequestScriptCompilation();
-                return JsonText(McpJson.Object(
-                    "requested", true,
-                    "isCompiling", EditorApplication.isCompiling,
-                    "isUpdating", EditorApplication.isUpdating));
+                var payload = CreateCompilationStatusPayload();
+                var port = OpenUnityMcpServer.Port > 0 ? OpenUnityMcpServer.Port : OpenUnityMcpSettings.Port;
+                payload["requested"] = true;
+                payload["serverMayTemporarilyDisconnect"] = true;
+                payload["recommendedRecovery"] = McpJson.Object(
+                    "healthUrl", "http://127.0.0.1:" + port + "/health",
+                    "retryDelayMilliseconds", 500,
+                    "nextTool", "unity.get_compilation_status",
+                    "nextArguments", McpJson.Object(
+                        "includeConsole", true,
+                        "logLimit", 100));
+                return JsonText(payload);
             });
 
         public static readonly McpTool GetBuildSettings = new McpTool(
@@ -165,7 +174,7 @@ namespace StrangeApe.OpenUnityMcp
         private static Dictionary<string, object> CreateCompilationStatusPayload()
         {
             var activeBuildTarget = EditorUserBuildSettings.activeBuildTarget;
-            return McpJson.Object(
+            var payload = McpJson.Object(
                 "isCompiling", EditorApplication.isCompiling,
                 "isUpdating", EditorApplication.isUpdating,
                 "isPlaying", EditorApplication.isPlaying,
@@ -174,6 +183,8 @@ namespace StrangeApe.OpenUnityMcp
                 "activeBuildTarget", activeBuildTarget.ToString(),
                 "activeBuildTargetGroup", BuildPipeline.GetBuildTargetGroup(activeBuildTarget).ToString(),
                 "editorTimeSinceStartup", EditorApplication.timeSinceStartup);
+            UnityMcpReloadState.AddToPayload(payload);
+            return payload;
         }
 
         private static ConsoleCounts AddConsoleSummary(Dictionary<string, object> payload, int logLimit, bool includeEntries)
