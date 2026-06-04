@@ -57,13 +57,15 @@ namespace StrangeApe.OpenUnityMcp
             File.WriteAllText(responsePath, BuildCompilerResponseFile(sourcePath, assemblyPath, allowUnsafe), new UTF8Encoding(false));
 
             var compiler = ResolveCompilerPath();
-            var compile = RunCompiler(compiler, responsePath, timeoutSeconds);
+            var runtime = ResolveMonoRuntimePath();
+            var compile = RunCompiler(runtime, compiler, responsePath, timeoutSeconds);
             if (compile.ExitCode != 0)
             {
                 return JsonText(McpJson.Object(
                     "compiled", false,
                     "executed", false,
                     "compiler", compiler,
+                    "runtime", runtime ?? string.Empty,
                     "sourcePath", UnityMcpPathUtility.MakeProjectRelative(sourcePath),
                     "assemblyPath", UnityMcpPathUtility.MakeProjectRelative(assemblyPath),
                     "exitCode", compile.ExitCode,
@@ -204,14 +206,51 @@ namespace StrangeApe.OpenUnityMcp
             throw new InvalidOperationException("Could not find Unity's C# compiler.");
         }
 
-        private static CompileResult RunCompiler(string compilerPath, string responsePath, int timeoutSeconds)
+        private static string ResolveMonoRuntimePath()
         {
+            var editorDirectory = Path.GetDirectoryName(EditorApplication.applicationPath);
+            var dataDirectory = Path.Combine(editorDirectory ?? string.Empty, "Data");
+            var candidates = new[]
+            {
+                Path.Combine(dataDirectory, "MonoBleedingEdge", "bin", "mono.exe"),
+                Path.Combine(dataDirectory, "MonoBleedingEdge", "bin", "mono")
+            };
+
+            foreach (var candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private static CompileResult RunCompiler(string runtimePath, string compilerPath, string responsePath, int timeoutSeconds)
+        {
+            string fileName;
+            string arguments;
+            if (!string.IsNullOrEmpty(runtimePath))
+            {
+                // Unity ships csc.exe as a Mono assembly. Launching it directly under the
+                // Windows .NET Framework CLR fails to load System.Text.Encoding.CodePages and
+                // aborts emit, so run it through Unity's bundled Mono runtime instead.
+                fileName = runtimePath;
+                arguments = "\"" + compilerPath + "\" @\"" + responsePath + "\"";
+            }
+            else
+            {
+                fileName = compilerPath;
+                arguments = "@\"" + responsePath + "\"";
+            }
+
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = compilerPath,
-                    Arguments = "@\"" + responsePath + "\"",
+                    FileName = fileName,
+                    Arguments = arguments,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,

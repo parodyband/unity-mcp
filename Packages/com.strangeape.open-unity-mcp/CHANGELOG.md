@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0
+
+- Fixed `unity.execute_csharp` on Windows by launching Unity's bundled `csc.exe` through the Mono runtime (`MonoBleedingEdge/bin/mono.exe`) instead of the .NET Framework CLR, which failed to load `System.Text.Encoding.CodePages` and aborted compilation.
+
 ## 0.7.0
 
 - Added prefab child targeting, ScriptableObject asset creation, prefab save/apply tools, C# fallback execution, and expanded prefab inspection metadata.
