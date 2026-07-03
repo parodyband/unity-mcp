@@ -173,7 +173,16 @@ namespace StrangeApe.OpenUnityMcp
 
             if (value is float || value is double || value is decimal)
             {
-                builder.Append(Convert.ToDouble(value, CultureInfo.InvariantCulture).ToString("R", CultureInfo.InvariantCulture));
+                var doubleValue = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                var text = doubleValue.ToString("R", CultureInfo.InvariantCulture);
+                if (double.IsNaN(doubleValue) || double.IsInfinity(doubleValue))
+                {
+                    // Bare NaN/Infinity tokens are invalid JSON and would corrupt the whole document.
+                    WriteString(builder, text);
+                    return;
+                }
+
+                builder.Append(text);
                 return;
             }
 
@@ -234,8 +243,13 @@ namespace StrangeApe.OpenUnityMcp
 
         private sealed class Parser
         {
+            // Bounds mutually recursive ParseValue/ParseObject/ParseArray stack growth; without it a
+            // deeply nested body overflows the stack and StackOverflowException cannot be caught.
+            private const int MaxDepth = 64;
+
             private readonly string _json;
             private int _index;
+            private int _depth;
 
             public Parser(string json)
             {
@@ -266,9 +280,9 @@ namespace StrangeApe.OpenUnityMcp
                 switch (_json[_index])
                 {
                     case '{':
-                        return ParseObject();
+                        return ParseNested(true);
                     case '[':
-                        return ParseArray();
+                        return ParseNested(false);
                     case '"':
                         return ParseString();
                     case 't':
@@ -282,6 +296,24 @@ namespace StrangeApe.OpenUnityMcp
                         return null;
                     default:
                         return ParseNumber();
+                }
+            }
+
+            private object ParseNested(bool isObject)
+            {
+                if (_depth >= MaxDepth)
+                {
+                    throw Error("JSON exceeds the maximum nesting depth of " + MaxDepth + ".");
+                }
+
+                _depth++;
+                try
+                {
+                    return isObject ? (object)ParseObject() : ParseArray();
+                }
+                finally
+                {
+                    _depth--;
                 }
             }
 
@@ -434,12 +466,28 @@ namespace StrangeApe.OpenUnityMcp
                 }
 
                 var text = _json.Substring(start, _index - start);
-                if (isFloating)
+                if (!isFloating && long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
                 {
-                    return double.Parse(text, CultureInfo.InvariantCulture);
+                    return longValue;
                 }
 
-                return long.Parse(text, CultureInfo.InvariantCulture);
+                // Integers beyond long range fall back to double, matching JavaScript JSON semantics.
+                double doubleValue;
+                try
+                {
+                    doubleValue = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
+                }
+                catch (OverflowException)
+                {
+                    throw Error("Number is out of range.");
+                }
+
+                if (double.IsNaN(doubleValue) || double.IsInfinity(doubleValue))
+                {
+                    throw Error("Number is out of range.");
+                }
+
+                return doubleValue;
             }
 
             private void ConsumeDigits()

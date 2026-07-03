@@ -9,13 +9,15 @@ namespace StrangeApe.OpenUnityMcp
         public readonly string Description;
         public readonly Dictionary<string, object> InputSchema;
         public readonly Func<Dictionary<string, object>, Dictionary<string, object>> Execute;
+        public readonly int TimeoutSeconds;
 
-        public McpTool(string name, string description, Dictionary<string, object> inputSchema, Func<Dictionary<string, object>, Dictionary<string, object>> execute)
+        public McpTool(string name, string description, Dictionary<string, object> inputSchema, Func<Dictionary<string, object>, Dictionary<string, object>> execute, int timeoutSeconds = UnityMainThread.DefaultTimeoutSeconds)
         {
             Name = name;
             Description = description;
             InputSchema = inputSchema;
             Execute = execute;
+            TimeoutSeconds = timeoutSeconds;
         }
     }
 
@@ -135,7 +137,7 @@ namespace StrangeApe.OpenUnityMcp
                     continue;
                 }
 
-                return UnityMainThread.Invoke(() => CallOnMainThread(tool, arguments));
+                return UnityMainThread.Invoke(() => CallOnMainThread(tool, arguments), tool.TimeoutSeconds);
             }
 
             throw new InvalidOperationException("Unknown tool: " + name);

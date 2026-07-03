@@ -25,7 +25,9 @@ namespace StrangeApe.OpenUnityMcp
                 "timeoutSeconds", McpToolRegistry.IntegerProperty("Compiler process timeout in seconds.", 1, 60),
                 "allowUnsafe", McpToolRegistry.BooleanProperty("Compile with /unsafe enabled."),
                 new[] { "code" }),
-            ExecuteCSharpImpl);
+            ExecuteCSharpImpl,
+            // The compiler process alone may take the full 60s timeoutSeconds before user code runs.
+            90);
 
         private static Dictionary<string, object> ExecuteCSharpImpl(Dictionary<string, object> args)
         {
@@ -53,12 +55,31 @@ namespace StrangeApe.OpenUnityMcp
             var assemblyPath = Path.Combine(workDirectory, "OpenUnityMcpExecute-" + runId + ".dll");
             var responsePath = Path.Combine(workDirectory, "OpenUnityMcpExecute-" + runId + ".rsp");
 
-            File.WriteAllText(sourcePath, wrap ? WrapCode(code) : code, new UTF8Encoding(false));
-            File.WriteAllText(responsePath, BuildCompilerResponseFile(sourcePath, assemblyPath, allowUnsafe), new UTF8Encoding(false));
+            string compiler;
+            string runtime;
+            CompileResult compile;
+            byte[] assemblyBytes = null;
+            try
+            {
+                File.WriteAllText(sourcePath, wrap ? WrapCode(code) : code, new UTF8Encoding(false));
+                File.WriteAllText(responsePath, BuildCompilerResponseFile(sourcePath, assemblyPath, allowUnsafe), new UTF8Encoding(false));
 
-            var compiler = ResolveCompilerPath();
-            var runtime = ResolveMonoRuntimePath();
-            var compile = RunCompiler(runtime, compiler, responsePath, timeoutSeconds);
+                compiler = ResolveCompilerPath();
+                runtime = ResolveMonoRuntimePath();
+                compile = RunCompiler(runtime, compiler, responsePath, timeoutSeconds);
+                if (compile.ExitCode == 0)
+                {
+                    assemblyBytes = File.ReadAllBytes(assemblyPath);
+                }
+            }
+            finally
+            {
+                // Transient compiler artifacts otherwise accumulate under Temp on every call.
+                TryDeleteFile(sourcePath);
+                TryDeleteFile(responsePath);
+                TryDeleteFile(assemblyPath);
+            }
+
             if (compile.ExitCode != 0)
             {
                 return JsonText(McpJson.Object(
@@ -76,7 +97,9 @@ namespace StrangeApe.OpenUnityMcp
             var stopwatch = Stopwatch.StartNew();
             try
             {
-                var assembly = Assembly.LoadFile(assemblyPath);
+                // Loading from bytes keeps the temp .dll deletable; the assembly itself still
+                // stays in the domain until the next reload, which is inherent to in-process code.
+                var assembly = Assembly.Load(assemblyBytes);
                 var method = ResolveEntryPoint(assembly, entryPoint);
                 var result = method.Invoke(null, null);
                 stopwatch.Stop();
@@ -412,6 +435,18 @@ namespace StrangeApe.OpenUnityMcp
                     "type", ex.GetType().FullName,
                     "message", ex.Message,
                     "stackTrace", ex.StackTrace ?? string.Empty)), true);
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch
+            {
+                // Temp cleanup is best-effort; Unity clears Temp on the next editor restart.
+            }
         }
 
         private static string RequireString(Dictionary<string, object> args, string name)

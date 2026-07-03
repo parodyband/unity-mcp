@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.0
+
+- Fixed an editor-crashing denial of service in the JSON parser: deeply nested request bodies now fail with a normal parse error (maximum nesting depth 64) instead of an uncatchable `StackOverflowException` that killed the editor and any unsaved work.
+- Fixed `NaN`/`Infinity` float values corrupting entire JSON responses; non-finite numbers now serialize as `"NaN"`/`"Infinity"`/`"-Infinity"` strings.
+- Numbers beyond double range now surface as JSON-RPC parse errors (`-32700`) instead of internal errors, and integers beyond long range parse as doubles instead of failing.
+- Fixed `unity.set_serialized_property` silently binding object-reference properties to the current editor selection when no target was supplied; explicit `objectReferenceObjectId`/`objectReferencePath` (or `value:null` to clear) is now required.
+- Fixed a main-thread dispatch race where a timed-out tool call could still execute later — double-executing retried requests and signaling a disposed wait handle; timed-out work is now cancelled before it runs.
+- Added per-tool main-thread timeout budgets so `unity.build_player` (10 minutes) and `unity.execute_csharp` (90 seconds) no longer fail at the fixed 30-second dispatch timeout while their work keeps running.
+- Hardened the HTTP server: a client disconnect while writing an error response no longer escapes to the thread pool, and invalid `Content-Length` headers are rejected cleanly.
+- Fixed `unity.execute_csharp` leaking temporary `.cs`/`.rsp`/`.dll` files on every call; compiler artifacts are now deleted after each run.
+- Made the post-reload server restart robust against back-to-back domain reloads (restart intent is no longer lost if a second reload lands before the pending start runs) and stopped using `EditorApplication.delayCall` for it.
+- Skipped MCP bootstrap entirely in AssetImportWorker background processes so package clones cannot contend for the server port.
+- Fixed the HTTP server test permanently stopping an already-running MCP server: it now parks the live server during the test and restores it on the original port afterwards.
+
 ## 0.9.0
 
 - Fixed `unity.execute_csharp` on Windows by launching Unity's bundled `csc.exe` through the Mono runtime (`MonoBleedingEdge/bin/mono.exe`) instead of the .NET Framework CLR, which failed to load `System.Text.Encoding.CodePages` and aborted compilation.

@@ -336,10 +336,18 @@ namespace StrangeApe.OpenUnityMcp
             error = null;
             var objectId = McpJson.AsString(args, "objectReferenceObjectId");
             var path = McpJson.AsString(args, "objectReferencePath");
-            if (string.IsNullOrEmpty(objectId) && string.IsNullOrEmpty(path) && args.TryGetValue("value", out var value) && value == null)
+            if (string.IsNullOrEmpty(objectId) && string.IsNullOrEmpty(path))
             {
-                property.objectReferenceValue = null;
-                return true;
+                if (args.TryGetValue("value", out var value) && value == null)
+                {
+                    property.objectReferenceValue = null;
+                    return true;
+                }
+
+                // Never fall back to the current editor selection here: it would silently bind the
+                // property to whatever happens to be selected and then save that corruption.
+                error = "Object reference properties require objectReferenceObjectId or objectReferencePath, or value:null to clear the reference.";
+                return false;
             }
 
             var reference = UnityMcpObjectUtility.ResolveObject(objectId, path);

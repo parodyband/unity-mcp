@@ -58,7 +58,7 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool BuildPlayer = new McpTool(
             "unity.build_player",
-            "Build a player with Unity BuildPipeline. Output is restricted to the project Builds folder.",
+            "Build a player with Unity BuildPipeline. Output is restricted to the project Builds folder. The build runs synchronously on the editor main thread and blocks the editor and other tools until it finishes.",
             McpToolRegistry.ObjectSchema(
                 "outputPath", McpToolRegistry.StringProperty("Project-relative output path under Builds, such as Builds/Windows/OpenUnityMcp.exe."),
                 "target", McpToolRegistry.StringProperty("Optional UnityEditor.BuildTarget name. Defaults to the active build target."),
@@ -69,7 +69,9 @@ namespace StrangeApe.OpenUnityMcp
                 "development", McpToolRegistry.BooleanProperty("Enable Development Build."),
                 "allowDebugging", McpToolRegistry.BooleanProperty("Enable script debugging. Implies Development Build."),
                 new[] { "outputPath" }),
-            BuildPlayerImpl);
+            BuildPlayerImpl,
+            // Player builds run synchronously and routinely exceed the default 30s dispatch budget.
+            600);
 
         private static string ProjectRoot => UnityMcpPathUtility.ProjectRoot;
 

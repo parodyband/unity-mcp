@@ -12,10 +12,28 @@ namespace StrangeApe.OpenUnityMcp.Tests
 {
     public sealed class McpServerHttpTests
     {
+        private bool _serverWasRunning;
+        private int _previousPort;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // The server is a process-wide singleton. If a live session already has it running,
+            // Start(testPort) would silently no-op (test connects to an unbound port) and
+            // TearDown's Stop() would kill the live server. Park it and restore it afterwards.
+            _serverWasRunning = OpenUnityMcpServer.IsRunning;
+            _previousPort = OpenUnityMcpServer.Port;
+            OpenUnityMcpServer.Stop();
+        }
+
         [TearDown]
         public void TearDown()
         {
             OpenUnityMcpServer.Stop();
+            if (_serverWasRunning && _previousPort > 0)
+            {
+                OpenUnityMcpServer.Start(_previousPort);
+            }
         }
 
         [UnityTest]

@@ -88,6 +88,18 @@ namespace StrangeApe.OpenUnityMcp.Tests
         }
 
         [Test]
+        public void DeeplyNestedBodyIsRejectedAsParseError()
+        {
+            var body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":" +
+                       new string('[', 500) + new string(']', 500) + "}";
+
+            var response = McpProtocol.Handle(body);
+
+            Assert.AreEqual(400, response.HttpStatus);
+            StringAssert.Contains("-32700", response.Body);
+        }
+
+        [Test]
         public void AssetTextToolsRejectTraversalOutsideAssetsAndPackages()
         {
             var response = McpProtocol.Handle("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"unity.read_asset_text\",\"arguments\":{\"path\":\"Assets/../ProjectSettings/ProjectVersion.txt\"}}}");

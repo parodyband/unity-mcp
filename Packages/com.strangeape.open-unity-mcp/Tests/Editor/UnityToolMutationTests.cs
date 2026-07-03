@@ -79,6 +79,40 @@ namespace StrangeApe.OpenUnityMcp.Tests
         }
 
         [Test]
+        public void SetSerializedPropertyObjectReferenceRequiresExplicitTarget()
+        {
+            var gameObject = new GameObject("OpenUnityMcpReferenceTarget");
+            var collider = gameObject.AddComponent<BoxCollider>();
+            var material = new PhysicsMaterial { name = "OpenUnityMcpPhysicsMaterial" };
+            var previousSelection = Selection.activeObject;
+            // The old behavior silently bound the property to the current selection; keep a
+            // compatible object selected to prove that no longer happens.
+            Selection.activeObject = material;
+            try
+            {
+                var componentId = UnityMcpObjectUtility.GetObjectId(collider);
+
+                var missingTargetResponse = CallTool("unity.set_serialized_property", "\"objectId\":\"" + componentId + "\",\"propertyPath\":\"m_Material\"");
+                StringAssert.Contains("\"isError\":true", missingTargetResponse.Body);
+                StringAssert.Contains("objectReferenceObjectId", ExtractToolText(missingTargetResponse));
+                Assert.IsNull(collider.sharedMaterial);
+
+                var assignResponse = CallTool("unity.set_serialized_property", "\"objectId\":\"" + componentId + "\",\"propertyPath\":\"m_Material\",\"objectReferenceObjectId\":\"" + UnityMcpObjectUtility.GetObjectId(material) + "\"");
+                StringAssert.Contains("\"changed\":true", ExtractToolText(assignResponse));
+                Assert.AreEqual(material, collider.sharedMaterial);
+
+                var clearResponse = CallTool("unity.set_serialized_property", "\"objectId\":\"" + componentId + "\",\"propertyPath\":\"m_Material\",\"value\":null");
+                StringAssert.Contains("\"changed\":true", ExtractToolText(clearResponse));
+                Assert.IsNull(collider.sharedMaterial);
+            }
+            finally
+            {
+                Selection.activeObject = previousSelection;
+                Object.DestroyImmediate(material);
+            }
+        }
+
+        [Test]
         public void PrefabToolsSaveInspectAndInstantiatePrefab()
         {
             var source = new GameObject("OpenUnityMcpPrefabSource");

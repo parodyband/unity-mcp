@@ -116,8 +116,16 @@ namespace StrangeApe.OpenUnityMcp
                 }
                 catch (Exception ex)
                 {
-                    var error = JsonRpcError(null, -32603, ex.Message);
-                    WriteHttpResponse(client.GetStream(), new HttpResponse(500, "application/json", error));
+                    try
+                    {
+                        var error = JsonRpcError(null, -32603, ex.Message);
+                        WriteHttpResponse(client.GetStream(), new HttpResponse(500, "application/json", error));
+                    }
+                    catch
+                    {
+                        // The client disconnected mid-request; nothing can be written back, and an
+                        // exception escaping here would surface as an unhandled ThreadPool error.
+                    }
                 }
             }
         }
@@ -238,7 +246,10 @@ namespace StrangeApe.OpenUnityMcp
             var contentLength = 0;
             if (headers.TryGetValue("content-length", out var lengthText))
             {
-                contentLength = int.Parse(lengthText, CultureInfo.InvariantCulture);
+                if (!int.TryParse(lengthText, NumberStyles.Integer, CultureInfo.InvariantCulture, out contentLength) || contentLength < 0)
+                {
+                    throw new FormatException("Invalid Content-Length header.");
+                }
             }
 
             if (contentLength > MaxBodyBytes)
