@@ -15,9 +15,25 @@ namespace StrangeApe.OpenUnityMcp
     {
         private const int MaxCodeChars = 200000;
 
+        // Bounds the main-thread execution stage (Assembly.Load + entry-point Invoke +
+        // result serialization). The compile stage runs off the main thread, so this only
+        // covers user code and JSON serialization. Arbitrary user code with an unbounded
+        // loop can still hang the editor here — that hazard is inherent to running code
+        // in-process and is called out in the tool description.
+        private const int ExecutionStageTimeoutSeconds = 60;
+
+        // Snapshotted on the main thread in stage 1 (EnsureIdleAndPaths) so the
+        // caller-thread compile stage never touches Application.dataPath or
+        // EditorApplication.applicationPath off-thread. Populated lazily rather than in an
+        // [InitializeOnLoadMethod] on purpose: forcing this type's static init at load time
+        // reentrantly triggers McpToolRegistry's cctor while this tool's own field is still
+        // null, which breaks the registry's name-sort. Stage 1 always runs before stage 2.
+        private static string _projectRoot;
+        private static string _editorApplicationPath;
+
         public static readonly McpTool ExecuteCSharp = new McpTool(
             "unity.execute_csharp",
-            "Compile and execute transient Unity editor C# code. This is an unrestricted fallback tool and should be approval-gated by MCP clients.",
+            "Compile and execute transient Unity editor C# code. This is an unrestricted fallback tool and should be approval-gated by MCP clients. The compile stage runs off the editor main thread so it does not freeze the UI; the compiled code itself then runs on the main thread, where an unbounded loop can still hang the editor.",
             McpToolRegistry.ObjectSchema(
                 "code", McpToolRegistry.StringProperty("C# statements to run inside a generated static Execute method, or full source when wrap=false."),
                 "wrap", McpToolRegistry.BooleanProperty("Wrap code in a generated editor static method. Defaults to true."),
@@ -27,13 +43,21 @@ namespace StrangeApe.OpenUnityMcp
                 new[] { "code" }),
             ExecuteCSharpImpl,
             // The compiler process alone may take the full 60s timeoutSeconds before user code runs.
-            90);
+            90,
+            // The compile stage (external process + file IO, no Unity API) runs on the caller
+            // thread so it does not freeze the editor; only the execution stage hops to the
+            // main thread via its own bounded Invoke.
+            runOnCallerThread: true);
 
         private static Dictionary<string, object> ExecuteCSharpImpl(Dictionary<string, object> args)
         {
-            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            // Stage 1 (main thread): reject if the editor is mid-compile/update, and snapshot
+            // the main-thread-only paths the caller-thread stage needs. isCompiling/isUpdating
+            // must be read fresh on the main thread, not cached.
+            var busy = UnityMainThread.Invoke(EnsureIdleAndPaths);
+            if (busy != null)
             {
-                return McpToolRegistry.ToolText("Unity is compiling or updating assets. Try again after the editor is idle.", true);
+                return busy;
             }
 
             var code = RequireString(args, "code");
@@ -46,7 +70,11 @@ namespace StrangeApe.OpenUnityMcp
             var entryPoint = McpJson.AsString(args, "entryPoint", DefaultEntryPoint(wrap));
             var timeoutSeconds = Math.Max(1, Math.Min(60, McpJson.AsInt(args, "timeoutSeconds", 15)));
             var allowUnsafe = McpJson.AsBool(args, "allowUnsafe", false);
-            var workDirectory = Path.Combine(UnityMcpPathUtility.ProjectRoot, "Temp", "OpenUnityMcp", "ExecuteCSharp");
+
+            // Stage 2 (caller thread): write temp files, run the compiler process, read the
+            // resulting assembly bytes. No Unity API is touched here, so the editor UI stays
+            // responsive for the entire compile window.
+            var workDirectory = Path.Combine(_projectRoot, "Temp", "OpenUnityMcp", "ExecuteCSharp");
             Directory.CreateDirectory(workDirectory);
 
             var stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
@@ -87,11 +115,28 @@ namespace StrangeApe.OpenUnityMcp
                     "executed", false,
                     "compiler", compiler,
                     "runtime", runtime ?? string.Empty,
-                    "sourcePath", UnityMcpPathUtility.MakeProjectRelative(sourcePath),
-                    "assemblyPath", UnityMcpPathUtility.MakeProjectRelative(assemblyPath),
+                    "sourcePath", MakeProjectRelative(sourcePath),
+                    "assemblyPath", MakeProjectRelative(assemblyPath),
                     "exitCode", compile.ExitCode,
                     "stdout", compile.Stdout,
                     "stderr", compile.Stderr), true);
+            }
+
+            // Stage 3 (main thread): loading the assembly and running user code touches Unity
+            // APIs, so it is marshaled back onto the main thread with its own bounded timeout.
+            return UnityMainThread.Invoke(
+                () => ExecuteStage(assemblyBytes, entryPoint, sourcePath, assemblyPath, compile),
+                ExecutionStageTimeoutSeconds);
+        }
+
+        // Runs on the main thread. Re-checks isCompiling/isUpdating to guard the rare race
+        // where the editor started compiling between stage 1 and stage 3: loading into a
+        // domain that is about to be torn down would be unsafe, so bail with the same error.
+        private static Dictionary<string, object> ExecuteStage(byte[] assemblyBytes, string entryPoint, string sourcePath, string assemblyPath, CompileResult compile)
+        {
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            {
+                return McpToolRegistry.ToolText("Unity started compiling or updating assets before the compiled code could run. Try again after the editor is idle.", true);
             }
 
             var stopwatch = Stopwatch.StartNew();
@@ -108,8 +153,8 @@ namespace StrangeApe.OpenUnityMcp
                     "compiled", true,
                     "executed", true,
                     "entryPoint", entryPoint,
-                    "sourcePath", UnityMcpPathUtility.MakeProjectRelative(sourcePath),
-                    "assemblyPath", UnityMcpPathUtility.MakeProjectRelative(assemblyPath),
+                    "sourcePath", MakeProjectRelative(sourcePath),
+                    "assemblyPath", MakeProjectRelative(assemblyPath),
                     "elapsedMilliseconds", stopwatch.ElapsedMilliseconds,
                     "stdout", compile.Stdout,
                     "stderr", compile.Stderr,
@@ -126,6 +171,42 @@ namespace StrangeApe.OpenUnityMcp
                 stopwatch.Stop();
                 return ExecutionError(entryPoint, sourcePath, assemblyPath, stopwatch.ElapsedMilliseconds, ex);
             }
+        }
+
+        // Returns an error payload if the editor is busy or the load-time path snapshot is
+        // unavailable, otherwise null. Runs on the main thread (called via Invoke).
+        private static Dictionary<string, object> EnsureIdleAndPaths()
+        {
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            {
+                return McpToolRegistry.ToolText("Unity is compiling or updating assets. Try again after the editor is idle.", true);
+            }
+
+            if (string.IsNullOrEmpty(_projectRoot))
+            {
+                _projectRoot = UnityMcpPathUtility.ProjectRoot;
+            }
+
+            if (string.IsNullOrEmpty(_editorApplicationPath))
+            {
+                _editorApplicationPath = EditorApplication.applicationPath;
+            }
+
+            return null;
+        }
+
+        // Project-relative rendering uses the cached root so it is safe to call from the
+        // caller thread; MakeProjectRelative on UnityMcpPathUtility reads Application.dataPath.
+        private static string MakeProjectRelative(string fullPath)
+        {
+            var root = Path.GetFullPath(_projectRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var normalized = Path.GetFullPath(fullPath);
+            if (!UnityMcpPathUtility.IsSameOrChildPath(normalized, root))
+            {
+                return normalized.Replace('\\', '/');
+            }
+
+            return normalized.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
         }
 
         private static string DefaultEntryPoint(bool wrap)
@@ -210,7 +291,7 @@ namespace StrangeApe.OpenUnityMcp
 
         private static string ResolveCompilerPath()
         {
-            var editorDirectory = Path.GetDirectoryName(EditorApplication.applicationPath);
+            var editorDirectory = Path.GetDirectoryName(_editorApplicationPath);
             var dataDirectory = Path.Combine(editorDirectory ?? string.Empty, "Data");
             var candidates = new[]
             {
@@ -231,7 +312,7 @@ namespace StrangeApe.OpenUnityMcp
 
         private static string ResolveMonoRuntimePath()
         {
-            var editorDirectory = Path.GetDirectoryName(EditorApplication.applicationPath);
+            var editorDirectory = Path.GetDirectoryName(_editorApplicationPath);
             var dataDirectory = Path.Combine(editorDirectory ?? string.Empty, "Data");
             var candidates = new[]
             {

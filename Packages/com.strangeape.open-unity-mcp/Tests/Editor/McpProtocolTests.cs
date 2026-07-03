@@ -171,6 +171,22 @@ namespace StrangeApe.OpenUnityMcp.Tests
             StringAssert.Contains("Create a test prefab", getResponse.Body);
         }
 
+        [Test]
+        public void ExecuteCSharpCompilesAndRunsThroughToolCall()
+        {
+            // Drives the real Unity compiler through the full tools/call path. After the
+            // 0.12.0 restructure the compile stage runs on the caller thread; because the
+            // test suite runs on the main thread, UnityMainThread.Invoke executes inline,
+            // exercising the runOnCallerThread path with the caller being the main thread.
+            var response = McpProtocol.Handle("{\"jsonrpc\":\"2.0\",\"id\":\"exec\",\"method\":\"tools/call\",\"params\":{\"name\":\"unity.execute_csharp\",\"arguments\":{\"code\":\"return 1 + 1;\",\"timeoutSeconds\":30}}}");
+
+            Assert.AreEqual(200, response.HttpStatus);
+            var text = ExtractToolText(response);
+            StringAssert.Contains("\"compiled\":true", text);
+            StringAssert.Contains("\"executed\":true", text);
+            StringAssert.Contains("\"result\":2", text);
+        }
+
         private static string ExtractToolText(McpProtocolResponse response)
         {
             var body = McpJson.Parse(response.Body) as Dictionary<string, object>;

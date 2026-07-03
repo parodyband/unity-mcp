@@ -85,18 +85,22 @@ Use **Preferences > Open Unity MCP > Client Setup** to configure supported clien
 
 | Client | Config updated | Transport |
 | --- | --- | --- |
-| Claude Code | `.mcp.json` in the Unity project root | Direct Streamable HTTP |
-| Codex | `~/.codex/config.toml` | Direct Streamable HTTP |
-| Claude Desktop | `claude_desktop_config.json` | Local `mcp-remote` stdio bridge |
+| Claude Code | `.mcp.json` in the Unity project root | stdio sidecar (survives reloads) |
+| Codex | `~/.codex/config.toml` | stdio sidecar (survives reloads) |
+| Claude Desktop | `claude_desktop_config.json` | stdio sidecar (survives reloads) |
 
-Manual Streamable HTTP config:
+### Recommended: the reload-surviving sidecar
+
+Setup helpers configure a small Node stdio sidecar (`Server~/open-unity-mcp-sidecar.js`, Node 18+, zero dependencies) as the endpoint your client connects to. The sidecar forwards to the in-editor HTTP server and rides out domain reloads, so the MCP session survives recompiles instead of dropping with a connection error. This is the recommended transport for all clients.
+
+Clients that speak Streamable HTTP directly can still connect to `http://127.0.0.1:8080/mcp`, but that connection drops on every recompile.
 
 ```toml
 [mcp_servers.open-unity-mcp]
 url = "http://127.0.0.1:8080/mcp"
 ```
 
-Read the full guide: [Documentation~/client-setup.md](Documentation~/client-setup.md).
+Read the full guide: [Documentation~/client-setup.md](Documentation~/client-setup.md) (and the sidecar's own [Server~/README.md](Server~/README.md)).
 
 ## What Agents Can Do
 

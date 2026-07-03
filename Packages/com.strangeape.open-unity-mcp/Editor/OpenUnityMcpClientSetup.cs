@@ -320,8 +320,6 @@ namespace StrangeApe.OpenUnityMcp
 
         internal static string CodexConfigPath => Path.Combine(GetHomeDirectory(), ".codex", "config.toml");
 
-        internal static string ClaudeDesktopConfigPath => ClaudeDesktopConfigPaths[0];
-
         internal static List<string> ClaudeDesktopConfigPaths
         {
             get

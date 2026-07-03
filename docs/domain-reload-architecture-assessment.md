@@ -6,8 +6,14 @@
 fixes) landed in 0.10.0 — see CHANGELOG. Workstream 2 (the reload-surviving sidecar + status file +
 client-setup rewrite) landed in 0.11.0: `Server~/open-unity-mcp-sidecar.js` (Node 18+, zero deps) is now
 the MCP endpoint clients connect to, backed by `Temp/OpenUnityMcp/server-status.json`; runtime decision
-resolved in favor of Node (Part 8). The main-thread-freeze bugs (Part 7 HIGH) remain a separate,
-still-open workstream — the sidecar does not address them.
+resolved in favor of Node (Part 8). 0.12.0 adds the opt-in access token (Part 7 MEDIUM "no authentication
+= local RCE"; off by default, gated by the loopback-origin check unless enabled) and moves the
+`execute_csharp` **compile** stage off the main thread (Part 7 HIGH): the external compiler process and its
+file IO now run on the caller thread, so the editor UI no longer freezes for the compile window. The
+remaining main-thread blocking is **inherent** and not further reducible in-process: `build_player` runs a
+synchronous `BuildPipeline.BuildPlayer`, and `execute_csharp`'s **execution** stage runs arbitrary user
+code on the main thread (an unbounded loop can still hang the editor). Those are documented rather than
+"fixable."
 
 ---
 

@@ -11,13 +11,20 @@ namespace StrangeApe.OpenUnityMcp
         public readonly Func<Dictionary<string, object>, Dictionary<string, object>> Execute;
         public readonly int TimeoutSeconds;
 
-        public McpTool(string name, string description, Dictionary<string, object> inputSchema, Func<Dictionary<string, object>, Dictionary<string, object>> execute, int timeoutSeconds = UnityMainThread.DefaultTimeoutSeconds)
+        // When true, the tool body runs on the caller (accept-loop ThreadPool) thread
+        // instead of being marshaled onto the editor main thread, so its non-Unity work
+        // (external processes, file IO) does not freeze the editor UI. Such a tool is
+        // responsible for hopping onto the main thread itself for any Unity-API work.
+        public readonly bool RunOnCallerThread;
+
+        public McpTool(string name, string description, Dictionary<string, object> inputSchema, Func<Dictionary<string, object>, Dictionary<string, object>> execute, int timeoutSeconds = UnityMainThread.DefaultTimeoutSeconds, bool runOnCallerThread = false)
         {
             Name = name;
             Description = description;
             InputSchema = inputSchema;
             Execute = execute;
             TimeoutSeconds = timeoutSeconds;
+            RunOnCallerThread = runOnCallerThread;
         }
     }
 
@@ -137,7 +144,9 @@ namespace StrangeApe.OpenUnityMcp
                     continue;
                 }
 
-                return UnityMainThread.Invoke(() => CallOnMainThread(tool, arguments), tool.TimeoutSeconds);
+                return tool.RunOnCallerThread
+                    ? CallOnCallerThread(tool, arguments)
+                    : UnityMainThread.Invoke(() => CallOnMainThread(tool, arguments), tool.TimeoutSeconds);
             }
 
             throw new InvalidOperationException("Unknown tool: " + name);
@@ -150,6 +159,25 @@ namespace StrangeApe.OpenUnityMcp
                 return ToolText("Tool '" + tool.Name + "' is disabled in Open Unity MCP preferences.", true);
             }
 
+            return ExecuteGuarded(tool, arguments);
+        }
+
+        // Runs the tool body on the caller thread (the server accept loop's ThreadPool
+        // thread). The enabled-check reads EditorPrefs, which is main-thread-only, so it
+        // is marshaled onto the main thread via a short Invoke; the tool itself is then
+        // responsible for hopping onto the main thread for any Unity-API work it does.
+        private static Dictionary<string, object> CallOnCallerThread(McpTool tool, Dictionary<string, object> arguments)
+        {
+            if (!UnityMainThread.Invoke(() => OpenUnityMcpSettings.IsToolEnabled(tool.Name)))
+            {
+                return ToolText("Tool '" + tool.Name + "' is disabled in Open Unity MCP preferences.", true);
+            }
+
+            return ExecuteGuarded(tool, arguments);
+        }
+
+        private static Dictionary<string, object> ExecuteGuarded(McpTool tool, Dictionary<string, object> arguments)
+        {
             try
             {
                 return tool.Execute(arguments);
