@@ -3,8 +3,11 @@
 **Date:** 2026-07-03
 **Scope:** `Packages/com.strangeape.open-unity-mcp`
 **Status:** Validated against source 2026-07-03; all Part 7 findings confirmed. Workstream 1 (in-editor
-fixes) landed in 0.10.0 — see CHANGELOG. Workstream 2 (sidecar) still open, pending the runtime/scope
-decision in Part 8.
+fixes) landed in 0.10.0 — see CHANGELOG. Workstream 2 (the reload-surviving sidecar + status file +
+client-setup rewrite) landed in 0.11.0: `Server~/open-unity-mcp-sidecar.js` (Node 18+, zero deps) is now
+the MCP endpoint clients connect to, backed by `Temp/OpenUnityMcp/server-status.json`; runtime decision
+resolved in favor of Node (Part 8). The main-thread-freeze bugs (Part 7 HIGH) remain a separate,
+still-open workstream — the sidecar does not address them.
 
 ---
 

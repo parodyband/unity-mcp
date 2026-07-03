@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEditor;
@@ -11,8 +12,9 @@ namespace StrangeApe.OpenUnityMcp
     internal static class OpenUnityMcpClientSetup
     {
         private const string ServerName = "open-unity-mcp";
+        private const string HttpFallbackServerName = "open-unity-mcp-http";
         private const string CodexSectionName = "mcp_servers." + ServerName;
-        private const string ClaudeDesktopBridgePackage = "mcp-remote@latest";
+        private const string SidecarRelativePath = "Server~/open-unity-mcp-sidecar.js";
         private const string NewLine = "\r\n";
 
         [MenuItem("Tools/Open Unity MCP/Setup/Claude Code Project", false, 60)]
@@ -20,8 +22,8 @@ namespace StrangeApe.OpenUnityMcp
         {
             InstallWithDialog(
                 "Claude Code",
-                () => InstallClaudeCodeProjectConfig(ProjectRoot, OpenUnityMcpSettings.Endpoint),
-                "Restart Claude Code, or run /mcp in an active session to check the connection.");
+                () => InstallClaudeCodeProjectConfig(ProjectRoot, ResolveLaunch()),
+                "Restart Claude Code, or run /mcp in an active session to check the connection.\n\nThe sidecar rides out Unity domain reloads so the connection survives recompiles.");
         }
 
         [MenuItem("Tools/Open Unity MCP/Setup/Codex User Config", false, 61)]
@@ -29,7 +31,7 @@ namespace StrangeApe.OpenUnityMcp
         {
             InstallWithDialog(
                 "Codex",
-                () => InstallCodexConfig(CodexConfigPath, OpenUnityMcpSettings.Endpoint),
+                () => InstallCodexConfig(CodexConfigPath, ResolveLaunch()),
                 "Restart Codex, then run codex mcp list to check the connection.");
         }
 
@@ -38,7 +40,7 @@ namespace StrangeApe.OpenUnityMcp
         {
             if (!EditorUtility.DisplayDialog(
                     "Setup Claude Desktop",
-                    "Claude Desktop starts local MCP servers as processes. This will add a local stdio bridge that runs npx -y mcp-remote@latest --http " + OpenUnityMcpSettings.Endpoint + " --allow-http.\n\nNode.js/npm must be installed for the bridge to run.",
+                    "Claude Desktop starts local MCP servers as processes. This will add the Open Unity MCP sidecar (node " + SidecarRelativePath + "), which forwards to the in-editor server and survives domain reloads.\n\nNode.js 18+ must be installed to run the sidecar.",
                     "Update Config",
                     "Cancel"))
             {
@@ -47,7 +49,7 @@ namespace StrangeApe.OpenUnityMcp
 
             InstallWithDialog(
                 "Claude Desktop",
-                () => string.Join("\n", InstallClaudeDesktopConfigs(OpenUnityMcpSettings.Endpoint).ToArray()),
+                () => string.Join("\n", InstallClaudeDesktopConfigs(ResolveLaunch()).ToArray()),
                 "Restart Claude Desktop, or reload MCP configuration from Settings > Developer.");
         }
 
@@ -57,14 +59,14 @@ namespace StrangeApe.OpenUnityMcp
 
             DrawClientBlock(
                 "Claude Code",
-                "HTTP - .mcp.json in project root",
+                "stdio sidecar - .mcp.json in project root (survives reloads)",
                 new[] { ProjectRelativeClaudeCodeConfigPath },
                 "Setup Claude Code",
                 InstallClaudeCodeProjectConfigMenu);
 
             DrawClientBlock(
                 "Codex",
-                "HTTP - user config.toml",
+                "stdio sidecar - user config.toml (survives reloads)",
                 new[] { CodexConfigPath },
                 "Setup Codex",
                 InstallCodexConfigMenu);
@@ -72,7 +74,7 @@ namespace StrangeApe.OpenUnityMcp
             var claudeDesktopPaths = ClaudeDesktopConfigPaths;
             DrawClientBlock(
                 "Claude Desktop",
-                "stdio bridge via npx mcp-remote (requires Node.js)",
+                "stdio sidecar via node (requires Node.js 18+)",
                 claudeDesktopPaths.ToArray(),
                 "Setup Claude Desktop Bridge",
                 InstallClaudeDesktopConfigMenu);
@@ -108,13 +110,19 @@ namespace StrangeApe.OpenUnityMcp
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 EditorGUILayout.LabelField("Custom MCP Client", EditorStyles.boldLabel);
-                EditorGUILayout.LabelField("Point any MCP client at the endpoint below, or wrap it with the stdio bridge command for clients that only launch processes.", EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField("For clients that launch a process, use the sidecar command below (it survives domain reloads). Clients that speak Streamable HTTP directly can use the URL, but will drop on every recompile.", EditorStyles.wordWrappedMiniLabel);
 
-                var endpoint = OpenUnityMcpSettings.Endpoint;
-                DrawCopyableRow("HTTP URL", endpoint);
+                var launch = TryResolveLaunch();
+                if (launch.HasValue)
+                {
+                    DrawCopyableRow("Sidecar", launch.Value.CommandLine);
+                }
+                else
+                {
+                    EditorGUILayout.LabelField("Sidecar path unavailable (package not resolved).", EditorStyles.miniLabel);
+                }
 
-                var bridgeCommand = "npx -y " + ClaudeDesktopBridgePackage + " --http " + endpoint + " --allow-http";
-                DrawCopyableRow("Stdio bridge", bridgeCommand);
+                DrawCopyableRow("HTTP URL", OpenUnityMcpSettings.Endpoint);
 
                 using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(ClientSetupDocPath)))
                 {
@@ -168,6 +176,125 @@ namespace StrangeApe.OpenUnityMcp
             }
         }
 
+        // Absolute path to the bundled sidecar script, resolved from the package's
+        // on-disk location so it works whether the package lives in Packages/ or the
+        // global PackageCache. Returns null if the package cannot be resolved.
+        internal static string SidecarScriptPath
+        {
+            get
+            {
+                var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(OpenUnityMcpClientSetup).Assembly);
+                if (package == null || string.IsNullOrEmpty(package.resolvedPath))
+                {
+                    return null;
+                }
+
+                return Path.GetFullPath(Path.Combine(package.resolvedPath, "Server~", "open-unity-mcp-sidecar.js"));
+            }
+        }
+
+        private static SidecarLaunch ResolveLaunch()
+        {
+            var scriptPath = SidecarScriptPath;
+            if (string.IsNullOrEmpty(scriptPath))
+            {
+                throw new InvalidOperationException(
+                    "Could not locate the sidecar script (Server~/open-unity-mcp-sidecar.js) in the resolved package. " +
+                    "Reimport the package or use the HTTP URL directly.");
+            }
+
+            return SidecarLaunch.Create(scriptPath, OpenUnityMcpSettings.Port, ProjectRoot);
+        }
+
+        private static SidecarLaunch? TryResolveLaunch()
+        {
+            try
+            {
+                return ResolveLaunch();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // Describes how a client should launch the sidecar over stdio. Built once
+        // and handed to each client writer so the command line is identical across
+        // Claude Code, Codex, and Claude Desktop.
+        internal readonly struct SidecarLaunch
+        {
+            public readonly string Command;
+            public readonly string[] Args;
+            public readonly string Endpoint;
+
+            private SidecarLaunch(string command, string[] args, string endpoint)
+            {
+                Command = command;
+                Args = args;
+                Endpoint = endpoint;
+            }
+
+            public static SidecarLaunch Create(string scriptPath, int port, string projectRoot)
+            {
+                if (string.IsNullOrEmpty(scriptPath))
+                {
+                    throw new ArgumentException("Sidecar script path is required.", nameof(scriptPath));
+                }
+
+                var normalizedScript = scriptPath.Replace('\\', '/');
+                var normalizedProject = (projectRoot ?? string.Empty).Replace('\\', '/');
+                var args = new[]
+                {
+                    normalizedScript,
+                    "--port", port.ToString(CultureInfo.InvariantCulture),
+                    "--project", normalizedProject
+                };
+
+                return new SidecarLaunch("node", args, "http://127.0.0.1:" + port + "/mcp");
+            }
+
+            public string CommandLine
+            {
+                get
+                {
+                    var builder = new StringBuilder(Command);
+                    foreach (var arg in Args)
+                    {
+                        builder.Append(' ');
+                        builder.Append(arg.IndexOf(' ') >= 0 ? "\"" + arg + "\"" : arg);
+                    }
+
+                    return builder.ToString();
+                }
+            }
+
+            public void Require()
+            {
+                if (string.IsNullOrEmpty(Command) || Args == null || Args.Length == 0)
+                {
+                    throw new InvalidOperationException("Sidecar launch is not configured.");
+                }
+            }
+        }
+
+        private static string FormatTomlStringArray(string[] values)
+        {
+            var builder = new StringBuilder();
+            builder.Append('[');
+            for (var i = 0; i < values.Length; i++)
+            {
+                if (i > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                builder.Append(McpJson.Stringify(values[i]));
+            }
+
+            builder.Append(']');
+            return builder.ToString();
+        }
+
         internal static string ProjectRoot => Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 
         internal static string ProjectRelativeClaudeCodeConfigPath => Path.Combine(ProjectRoot, ".mcp.json");
@@ -200,51 +327,61 @@ namespace StrangeApe.OpenUnityMcp
             }
         }
 
-        internal static string InstallClaudeCodeProjectConfig(string projectRoot, string endpoint)
+        internal static string InstallClaudeCodeProjectConfig(string projectRoot, SidecarLaunch launch)
         {
             if (string.IsNullOrEmpty(projectRoot))
             {
                 throw new ArgumentException("Project root is required.", nameof(projectRoot));
             }
 
+            launch.Require();
             var configPath = Path.Combine(projectRoot, ".mcp.json");
-            UpsertJsonServerConfig(configPath, CreateHttpServerConfig(endpoint));
+            // The sidecar is the recommended default; keep a named HTTP entry as a
+            // fallback for anyone who wants to bypass Node, and so switching back is
+            // a one-line edit rather than reconstructing the URL.
+            UpsertJsonServerConfigs(configPath, new[]
+            {
+                new KeyValuePair<string, Dictionary<string, object>>(ServerName, CreateSidecarStdioConfig(launch)),
+                new KeyValuePair<string, Dictionary<string, object>>(HttpFallbackServerName, CreateHttpServerConfig(launch.Endpoint))
+            });
             return configPath;
         }
 
-        internal static string InstallClaudeDesktopConfig(string configPath, string endpoint)
+        internal static string InstallClaudeDesktopConfig(string configPath, SidecarLaunch launch)
         {
-            UpsertJsonServerConfig(configPath, CreateClaudeDesktopBridgeConfig(endpoint));
+            launch.Require();
+            UpsertJsonServerConfig(configPath, CreateSidecarStdioConfig(launch));
             return configPath;
         }
 
-        internal static List<string> InstallClaudeDesktopConfigs(string endpoint)
+        internal static List<string> InstallClaudeDesktopConfigs(SidecarLaunch launch)
         {
             var updatedPaths = new List<string>();
             foreach (var configPath in ClaudeDesktopConfigPaths)
             {
-                InstallClaudeDesktopConfig(configPath, endpoint);
+                InstallClaudeDesktopConfig(configPath, launch);
                 updatedPaths.Add(configPath);
             }
 
             return updatedPaths;
         }
 
-        internal static string InstallCodexConfig(string configPath, string endpoint)
+        internal static string InstallCodexConfig(string configPath, SidecarLaunch launch)
         {
             if (string.IsNullOrEmpty(configPath))
             {
                 throw new ArgumentException("Config path is required.", nameof(configPath));
             }
 
+            launch.Require();
             var existing = File.Exists(configPath) ? File.ReadAllText(configPath) : string.Empty;
-            WriteTextIfChanged(configPath, UpsertCodexConfigText(existing, endpoint));
+            WriteTextIfChanged(configPath, UpsertCodexConfigText(existing, launch));
             return configPath;
         }
 
-        internal static string UpsertCodexConfigText(string existing, string endpoint)
+        internal static string UpsertCodexConfigText(string existing, SidecarLaunch launch)
         {
-            RequireEndpoint(endpoint);
+            launch.Require();
 
             var lines = SplitContentLines(existing);
             RemoveTomlSection(lines, CodexSectionName);
@@ -255,7 +392,8 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             lines.Add("[" + CodexSectionName + "]");
-            lines.Add("url = " + McpJson.Stringify(endpoint));
+            lines.Add("command = " + McpJson.Stringify(launch.Command));
+            lines.Add("args = " + FormatTomlStringArray(launch.Args));
 
             return JoinLines(lines);
         }
@@ -289,21 +427,30 @@ namespace StrangeApe.OpenUnityMcp
                 "url", endpoint);
         }
 
-        private static Dictionary<string, object> CreateClaudeDesktopBridgeConfig(string endpoint)
+        private static Dictionary<string, object> CreateSidecarStdioConfig(SidecarLaunch launch)
         {
-            RequireEndpoint(endpoint);
+            launch.Require();
+
+            var args = new List<object>(launch.Args.Length);
+            foreach (var arg in launch.Args)
+            {
+                args.Add(arg);
+            }
 
             return McpJson.Object(
-                "command", "npx",
-                "args", McpJson.Array(
-                    "-y",
-                    ClaudeDesktopBridgePackage,
-                    "--http",
-                    endpoint,
-                    "--allow-http"));
+                "command", launch.Command,
+                "args", args);
         }
 
         private static void UpsertJsonServerConfig(string configPath, Dictionary<string, object> serverConfig)
+        {
+            UpsertJsonServerConfigs(configPath, new[]
+            {
+                new KeyValuePair<string, Dictionary<string, object>>(ServerName, serverConfig)
+            });
+        }
+
+        private static void UpsertJsonServerConfigs(string configPath, IEnumerable<KeyValuePair<string, Dictionary<string, object>>> serverConfigs)
         {
             if (string.IsNullOrEmpty(configPath))
             {
@@ -317,7 +464,11 @@ namespace StrangeApe.OpenUnityMcp
                 root["mcpServers"] = servers;
             }
 
-            servers[ServerName] = serverConfig;
+            foreach (var entry in serverConfigs)
+            {
+                servers[entry.Key] = entry.Value;
+            }
+
             WriteTextIfChanged(configPath, SerializePrettyJson(root));
         }
 

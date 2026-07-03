@@ -19,7 +19,7 @@ namespace StrangeApe.OpenUnityMcp
 
             UnityMainThread.Initialize();
             UnityMcpReloadState.MarkAssemblyLoaded();
-            EditorApplication.quitting += OpenUnityMcpServer.Stop;
+            EditorApplication.quitting += OnEditorQuitting;
             AssemblyReloadEvents.beforeAssemblyReload += BeforeAssemblyReload;
 
             if (OpenUnityMcpSettings.AutoStart || UnityMcpReloadState.ShouldRestartServerAfterReload)
@@ -49,9 +49,27 @@ namespace StrangeApe.OpenUnityMcp
         {
             var running = OpenUnityMcpServer.IsRunning;
             var restartPending = _pendingStartPort > 0;
+            var reloadPort = running ? OpenUnityMcpServer.Port : _pendingStartPort;
             UnityMcpReloadState.MarkBeforeAssemblyReload(
                 running || restartPending,
-                running ? OpenUnityMcpServer.Port : _pendingStartPort);
+                reloadPort);
+
+            // Tell the sidecar this is a reload (hold and retry), not a shutdown, so
+            // it waits the outage out instead of surfacing a connection error. Only
+            // meaningful when the server was actually up or slated to restart.
+            if (running || restartPending)
+            {
+                UnityMcpStatusFile.WriteReloading(reloadPort > 0 ? reloadPort : OpenUnityMcpSettings.Port);
+            }
+
+            OpenUnityMcpServer.Stop();
+        }
+
+        private static void OnEditorQuitting()
+        {
+            // A clean quit is a terminal signal for the sidecar: mark stopped so it
+            // stops waiting for a server that will not come back on its own.
+            UnityMcpStatusFile.WriteStopped(OpenUnityMcpServer.IsRunning ? OpenUnityMcpServer.Port : OpenUnityMcpSettings.Port);
             OpenUnityMcpServer.Stop();
         }
 

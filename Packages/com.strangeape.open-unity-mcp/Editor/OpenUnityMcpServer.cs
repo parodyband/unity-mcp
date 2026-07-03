@@ -45,6 +45,7 @@ namespace StrangeApe.OpenUnityMcp
                 _thread.Start();
             }
 
+            UnityMcpStatusFile.WriteRunning(port);
             Debug.Log("[Open Unity MCP] Listening on " + Endpoint);
         }
 

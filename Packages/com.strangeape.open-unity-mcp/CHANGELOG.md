@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- Added a reload-surviving stdio sidecar (`Server~/open-unity-mcp-sidecar.js`, Node 18+, zero npm dependencies) that becomes the MCP endpoint clients connect to and forwards JSON-RPC to the in-editor HTTP server. When a tool triggers a domain reload, the sidecar waits the outage out and retries instead of surfacing a connection error, so the client's MCP session stays alive across recompiles.
+- The sidecar classifies transport failures: connection-level failures (the request never reached the editor) are retried transparently for any method; a mid-flight failure on `tools/call` (the tool may already have run) returns a successful JSON-RPC result telling the model the operation may or may not have applied and to verify state before retrying, rather than blind-retrying a mutation. Idempotent reads retry transparently in both cases.
+- If the editor is genuinely gone (clean quit or the recovery deadline elapses), the sidecar returns a JSON-RPC error explaining that the Unity editor appears closed and how to restart the server.
+- After a recovery the sidecar emits `notifications/tools/list_changed` and rewrites the `initialize` result's `capabilities.tools.listChanged` to `true` so the readiness signal is spec-legal.
+- Added a Unity-side status file (`Temp/OpenUnityMcp/server-status.json`) written on server start (`running`), before an assembly reload (`reloading`), and on editor quit (`stopped`) so the sidecar can distinguish "rebooting, hold" from "gone". All writes are best-effort and never disturb a reload or quit.
+- Client setup now writes the sidecar over stdio (`node <Server~/open-unity-mcp-sidecar.js> --port <port> --project <root>`) for Claude Code, Codex, and Claude Desktop. Claude Code keeps a named `open-unity-mcp-http` fallback entry for direct HTTP; Claude Desktop no longer uses the `npx mcp-remote` bridge (which had no retry-on-outage behavior).
+
 ## 0.10.0
 
 - Fixed an editor-crashing denial of service in the JSON parser: deeply nested request bodies now fail with a normal parse error (maximum nesting depth 64) instead of an uncatchable `StackOverflowException` that killed the editor and any unsaved work.

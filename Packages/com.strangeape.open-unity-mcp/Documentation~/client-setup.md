@@ -26,11 +26,13 @@ These actions merge an `open-unity-mcp` server entry into the target config and 
 
 | Client | Config Updated | Transport |
 | --- | --- | --- |
-| Claude Code | `.mcp.json` in the Unity project root | Direct Streamable HTTP |
-| Codex | `~/.codex/config.toml` | Direct Streamable HTTP |
-| Claude Desktop | `claude_desktop_config.json` | Local stdio bridge with `npx -y mcp-remote@latest` |
+| Claude Code | `.mcp.json` in the Unity project root | stdio sidecar (`node Server~/open-unity-mcp-sidecar.js`) + named HTTP fallback |
+| Codex | `~/.codex/config.toml` | stdio sidecar |
+| Claude Desktop | `claude_desktop_config.json` | stdio sidecar |
 
-Claude Desktop requires Node.js/npm for the bridge. The bridge is needed because Claude Desktop's local MCP config starts local processes, while Open Unity MCP exposes a local HTTP endpoint.
+All three launch the bundled **sidecar** over stdio. The sidecar forwards JSON-RPC to the in-editor HTTP server and **rides out Unity domain reloads** so the client's connection survives recompiles, instead of dropping when Unity reloads the domain. It requires **Node.js 18+** on `PATH`. See `Server~/README.md` for the sidecar's arguments and reload behavior.
+
+Clients that speak Streamable HTTP directly can still point at the endpoint below, but they will drop on every recompile (Claude Code auto-reconnects for only ~31s, then marks the server failed). The Claude Code setup keeps a named `open-unity-mcp-http` entry for that case.
 
 ## Generic Streamable HTTP Client
 
@@ -44,24 +46,20 @@ The server accepts JSON-RPC over HTTP POST and returns JSON responses. GET retur
 
 ## Claude Code
 
-Use the Unity auto setup action, or add this `.mcp.json` file to the Unity project root:
+Use the Unity auto setup action (recommended — it fills in the absolute sidecar path for you), or add this `.mcp.json` to the Unity project root. Replace `<abs>` with the absolute path to the package's `Server~/open-unity-mcp-sidecar.js` and `<project>` with the Unity project root:
 
 ```json
 {
   "mcpServers": {
     "open-unity-mcp": {
-      "type": "http",
-      "url": "http://127.0.0.1:8080/mcp"
+      "command": "node",
+      "args": ["<abs>/Server~/open-unity-mcp-sidecar.js", "--port", "8080", "--project", "<project>"]
     }
   }
 }
 ```
 
-You can also add it with the Claude Code CLI:
-
-```powershell
-claude mcp add --transport http open-unity-mcp http://127.0.0.1:8080/mcp
-```
+The auto setup also writes a named `open-unity-mcp-http` fallback entry (`type: http`, direct to the endpoint) for anyone who wants to bypass Node. Direct HTTP drops on every recompile; the sidecar does not.
 
 Run `/mcp` in Claude Code to confirm the connection.
 
@@ -69,37 +67,26 @@ Claude Code may ask for permission to read `.claude/settings.local.json` when it
 
 ## Codex
 
-Use the Unity auto setup action, or add this to `~/.codex/config.toml`:
+Use the Unity auto setup action, or add this to `~/.codex/config.toml` (replace `<abs>` and `<project>` as above):
 
 ```toml
 [mcp_servers.open-unity-mcp]
-url = "http://127.0.0.1:8080/mcp"
-```
-
-You can also add it with the Codex CLI:
-
-```powershell
-codex mcp add open-unity-mcp --url http://127.0.0.1:8080/mcp
+command = "node"
+args = ["<abs>/Server~/open-unity-mcp-sidecar.js", "--port", "8080", "--project", "<project>"]
 ```
 
 Run `codex mcp list` to confirm the connection.
 
 ## Claude Desktop
 
-Use the Unity auto setup action, or add this to `claude_desktop_config.json`:
+Use the Unity auto setup action, or add this to `claude_desktop_config.json` (replace `<abs>` and `<project>` as above):
 
 ```json
 {
   "mcpServers": {
     "open-unity-mcp": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote@latest",
-        "--http",
-        "http://127.0.0.1:8080/mcp",
-        "--allow-http"
-      ]
+      "command": "node",
+      "args": ["<abs>/Server~/open-unity-mcp-sidecar.js", "--port", "8080", "--project", "<project>"]
     }
   }
 }
