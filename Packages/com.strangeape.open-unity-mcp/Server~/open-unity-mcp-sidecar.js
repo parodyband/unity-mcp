@@ -199,6 +199,32 @@ function statusSaysStopped(status) {
 }
 
 // ---------------------------------------------------------------------------
+// Access token
+// ---------------------------------------------------------------------------
+
+// The in-editor server writes its access token into the status file on every
+// start (whether or not enforcement is on). We attach it to every /mcp forward
+// so that enforcement can be toggled on in Unity without any client change. The
+// token is cached and refreshed after a recovery and on a 401 (see below).
+let cachedToken = null;
+
+function readTokenFromStatusFile() {
+  const status = readStatusFile();
+  if (status && typeof status.token === 'string' && status.token.length > 0) {
+    return status.token;
+  }
+  return null;
+}
+
+function refreshToken() {
+  const token = readTokenFromStatusFile();
+  if (token) {
+    cachedToken = token;
+  }
+  return cachedToken;
+}
+
+// ---------------------------------------------------------------------------
 // Health polling
 // ---------------------------------------------------------------------------
 
@@ -278,9 +304,18 @@ async function forwardOnce(rawBody) {
   }, ATTEMPT_TIMEOUT_MS);
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    // Attach the access token if we have one. Sending it unconditionally is
+    // harmless when the editor is not enforcing, and means enforcement can be
+    // turned on in Unity with no client-side change.
+    if (cachedToken) {
+      headers['Authorization'] = 'Bearer ' + cachedToken;
+      headers['X-Open-Unity-Mcp-Token'] = cachedToken;
+    }
+
     const response = await fetch(MCP_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: rawBody,
       signal: controller.signal
     });
@@ -410,6 +445,9 @@ function patchInitializeCapabilities(parsedBody) {
 // tool list immediately instead of timing out on their next call.
 function announceRecovery() {
   recoveredAtLeastOnce = true;
+  // The editor may have rebound with a freshly regenerated token; re-read it so
+  // subsequent forwards carry the current secret.
+  refreshToken();
   writeMessage({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
 }
 
@@ -422,6 +460,22 @@ async function handleMessage(message) {
 
   // First attempt against a presumed-healthy server.
   let result = await forwardOnce(rawBody);
+
+  // A 401 means the editor turned on token enforcement (or regenerated the
+  // token) since we last read the status file. Silently re-read the token and
+  // resend once; the editor rejects the request before running any tool, so the
+  // resend cannot duplicate a mutation. If still 401 (or no newer token), forward
+  // the 401 body through unchanged.
+  if (result.ok && result.status === 401) {
+    const previousToken = cachedToken;
+    const refreshed = refreshToken();
+    if (refreshed && refreshed !== previousToken) {
+      log('received 401; re-read access token from status file and resending once.');
+      result = await forwardOnce(rawBody);
+    } else {
+      log('received 401 and no newer token available; forwarding the 401 through.');
+    }
+  }
 
   if (result.ok) {
     respond(message, hasId, method, result.body, false);
@@ -572,6 +626,11 @@ function enqueue(message) {
 function main() {
   log('starting. endpoint=' + MCP_URL + ' project=' + CONFIG.project + ' timeout=' + CONFIG.timeoutMs + 'ms');
   log('status file=' + STATUS_FILE);
+
+  // Prime the access token from the status file if the editor is already running.
+  // It is refreshed after any recovery and on a 401, so a missing file here is fine.
+  refreshToken();
+  log('access token ' + (cachedToken ? 'loaded from status file' : 'not present yet (will read on demand)'));
 
   const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 

@@ -11,6 +11,7 @@ namespace StrangeApe.OpenUnityMcp
         private static bool _toolsFoldout = true;
         private static Vector2 _toolsScroll;
         private static string _toolsFilter = string.Empty;
+        private static bool _revealToken;
 
         [SettingsProvider]
         public static SettingsProvider CreateSettingsProvider()
@@ -117,12 +118,77 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             EditorGUILayout.Space();
+            DrawAccessTokenGui();
+            EditorGUILayout.Space();
             DrawToolsGui();
             EditorGUILayout.Space();
             OpenUnityMcpClientSetup.DrawClientSetupGui();
             EditorGUILayout.Space();
 
             EditorGUILayout.HelpBox("The server binds to 127.0.0.1 only. Configure your MCP client to use the endpoint above.", MessageType.Info);
+        }
+
+        private static void DrawAccessTokenGui()
+        {
+            EditorGUILayout.LabelField("Access Token", EditorStyles.boldLabel);
+
+            var require = EditorGUILayout.Toggle(
+                new GUIContent("Require Access Token", "When enabled, POST /mcp requires the access token below. /health stays open."),
+                OpenUnityMcpSettings.RequireAccessToken);
+            if (require != OpenUnityMcpSettings.RequireAccessToken)
+            {
+                OpenUnityMcpSettings.RequireAccessToken = require;
+            }
+
+            // Reading AccessToken lazily generates+persists it on first access, so the
+            // token shown here is stable and matches what the server enforces.
+            var token = OpenUnityMcpSettings.AccessToken;
+            var display = _revealToken ? token : MaskToken(token);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField("Token", GUILayout.Width(90f));
+                EditorGUILayout.SelectableLabel(display, EditorStyles.textField, GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                _revealToken = GUILayout.Toggle(_revealToken, _revealToken ? "Hide" : "Show", "Button", GUILayout.Width(50f));
+                if (GUILayout.Button("Copy", GUILayout.Width(50f)))
+                {
+                    EditorGUIUtility.systemCopyBuffer = token;
+                }
+
+                if (GUILayout.Button("Regenerate", GUILayout.Width(90f)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                            "Regenerate Access Token",
+                            "Generate a new access token? Any client configured with the old token will be rejected until it re-copies the new one. The change applies on the next server restart.",
+                            "Regenerate",
+                            "Cancel"))
+                    {
+                        OpenUnityMcpSettings.RegenerateAccessToken();
+                    }
+                }
+            }
+
+            EditorGUILayout.HelpBox(
+                "Off by default: /mcp is gated only by a loopback-origin check. When enabled, clients must send " +
+                "'Authorization: Bearer <token>' (or 'X-Open-Unity-Mcp-Token: <token>'). The bundled stdio sidecar reads " +
+                "the token automatically from Temp/OpenUnityMcp/server-status.json — no client changes are needed. " +
+                "Changes to this setting or the token apply on the next server restart.",
+                MessageType.None);
+        }
+
+        private static string MaskToken(string token)
+        {
+            if (string.IsNullOrEmpty(token))
+            {
+                return string.Empty;
+            }
+
+            if (token.Length <= 8)
+            {
+                return new string('•', token.Length);
+            }
+
+            return token.Substring(0, 4) + new string('•', token.Length - 8) + token.Substring(token.Length - 4);
         }
 
         private static void DrawToolsGui()

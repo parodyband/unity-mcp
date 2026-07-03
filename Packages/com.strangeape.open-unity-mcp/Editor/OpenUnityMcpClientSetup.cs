@@ -23,7 +23,26 @@ namespace StrangeApe.OpenUnityMcp
             InstallWithDialog(
                 "Claude Code",
                 () => InstallClaudeCodeProjectConfig(ProjectRoot, ResolveLaunch()),
-                "Restart Claude Code, or run /mcp in an active session to check the connection.\n\nThe sidecar rides out Unity domain reloads so the connection survives recompiles.");
+                "Restart Claude Code, or run /mcp in an active session to check the connection.\n\nThe sidecar rides out Unity domain reloads so the connection survives recompiles." +
+                HttpFallbackTokenNote());
+        }
+
+        // When token enforcement is on, the named HTTP fallback entry cannot work
+        // without a manually-added Authorization header — we never write the secret
+        // into .mcp.json (it would be committable). The sidecar entry is unaffected
+        // because it reads the token from the gitignored status file. This note is
+        // appended to setup dialogs so the user knows; it does NOT contain the token.
+        private static string HttpFallbackTokenNote()
+        {
+            if (!OpenUnityMcpSettings.RequireAccessToken)
+            {
+                return string.Empty;
+            }
+
+            return "\n\nAccess token enforcement is ON. The stdio sidecar entry (open-unity-mcp) sends the " +
+                   "token automatically. The named HTTP fallback entry (open-unity-mcp-http) will be REJECTED " +
+                   "unless you add an 'Authorization: Bearer <token>' header yourself — the token is deliberately " +
+                   "not written into .mcp.json. Copy it from Preferences > Open Unity MCP if you need the fallback.";
         }
 
         [MenuItem("Tools/Open Unity MCP/Setup/Codex User Config", false, 61)]

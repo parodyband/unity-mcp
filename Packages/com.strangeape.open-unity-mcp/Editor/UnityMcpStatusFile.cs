@@ -35,9 +35,15 @@ namespace StrangeApe.OpenUnityMcp
             }
         }
 
-        public static void WriteRunning(int port)
+        public static void WriteRunning(int port, string accessToken)
         {
-            Write("running", port, "\"endpoint\":\"http://127.0.0.1:" + port + "/mcp\",");
+            // The token is always included (whether or not enforcement is on) so the
+            // sidecar can attach it unconditionally. Temp/ is per-user and gitignored,
+            // the same trust boundary as the editor itself.
+            var tokenJson = string.IsNullOrEmpty(accessToken)
+                ? string.Empty
+                : "\"token\":\"" + EscapeJsonString(accessToken) + "\",";
+            Write("running", port, "\"endpoint\":\"http://127.0.0.1:" + port + "/mcp\"," + tokenJson);
         }
 
         public static void WriteReloading(int port)
@@ -81,6 +87,31 @@ namespace StrangeApe.OpenUnityMcp
                 // server start/stop, reloads, or quit.
                 Debug.LogWarning("[Open Unity MCP] Failed to write status file: " + ex.Message);
             }
+        }
+
+        // The access token is 64 hex characters, so this never actually escapes
+        // anything today; kept as a guard so the status JSON stays valid if the
+        // token format ever changes.
+        private static string EscapeJsonString(string value)
+        {
+            var builder = new System.Text.StringBuilder(value.Length);
+            foreach (var c in value)
+            {
+                switch (c)
+                {
+                    case '"':
+                        builder.Append("\\\"");
+                        break;
+                    case '\\':
+                        builder.Append("\\\\");
+                        break;
+                    default:
+                        builder.Append(c);
+                        break;
+                }
+            }
+
+            return builder.ToString();
         }
     }
 }

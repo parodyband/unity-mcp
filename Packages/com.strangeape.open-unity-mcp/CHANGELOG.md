@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0
+
+- Added an opt-in access token for the in-editor MCP server (addresses the "no authentication = local RCE" review finding). It is **off by default**: `/mcp` is gated only by the loopback-origin check unless you enable "Require Access Token" in `Preferences > Open Unity MCP`.
+- When enabled, `POST /mcp` requires the token via `Authorization: Bearer <token>` (or `X-Open-Unity-Mcp-Token: <token>` for clients that cannot set `Authorization`); a missing or wrong token returns `401` with a JSON-RPC error explaining where to find the token. `/health` stays unauthenticated (liveness probe, no sensitive data).
+- The token is a stable per-user+project 64-hex-character secret generated on first use and persisted in `EditorPrefs`, so it survives editor restarts and client configs never go stale. Preferences shows a masked/copyable token with a "Regenerate" action.
+- The required flag and token are snapshotted on the main thread when the server starts (never read from `EditorPrefs` on the accept-loop threads), so a settings or token change takes effect on the **next server restart** — noted in the Preferences UI.
+- The server always writes the token into `Temp/OpenUnityMcp/server-status.json` (whether or not enforcement is on). The bundled stdio sidecar reads it from there and attaches both headers on every forward, so enforcement can be toggled on in Unity with **no client-side change**. The sidecar refreshes the token after a recovery and, on a `401`, silently re-reads the status file and resends once (the editor rejects before running any tool, so the resend cannot duplicate a mutation) before forwarding a persistent `401` through.
+- Client setup is unchanged for the sidecar (the token flows via the gitignored status file, never written into `.mcp.json`). When enforcement is on at setup time, the Claude Code setup dialog now notes that the named `open-unity-mcp-http` fallback entry needs a manually-added `Authorization` header — the secret is deliberately not written into any committable config.
+
 ## 0.11.0
 
 - Added a reload-surviving stdio sidecar (`Server~/open-unity-mcp-sidecar.js`, Node 18+, zero npm dependencies) that becomes the MCP endpoint clients connect to and forwards JSON-RPC to the in-editor HTTP server. When a tool triggers a domain reload, the sidecar waits the outage out and retries instead of surfacing a connection error, so the client's MCP session stays alive across recompiles.

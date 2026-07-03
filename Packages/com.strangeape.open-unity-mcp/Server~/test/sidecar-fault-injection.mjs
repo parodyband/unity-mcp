@@ -18,6 +18,12 @@
 //   5. Server never returns (status file = stopped) -> JSON-RPC error (editor gone).
 //   6. initialize capabilities.tools.listChanged rewritten to true, and a
 //      notifications/tools/list_changed is emitted after a recovery.
+//   7. Access token: the sidecar reads the token from the status file and attaches
+//      it (Authorization: Bearer + X-Open-Unity-Mcp-Token) so the mock, which now
+//      REQUIRES the token on /mcp, accepts every request.
+//   8. Token rotation: the mock rotates its token and rejects the stale one with a
+//      401; the sidecar silently re-reads the status file and resends once, so the
+//      client sees a normal result (no 401 surfaced).
 //
 // Usage: node test/sidecar-fault-injection.mjs
 
@@ -49,6 +55,13 @@ class MockUnity {
     this.server = null;
     this.mcpHits = 0;
     this.healthHits = 0;
+    // Access-token enforcement (mirrors the real in-editor server). When
+    // requireToken is on, /mcp POSTs without the matching token get a 401.
+    this.token = null;
+    this.requireToken = false;
+    this.lastAuthHeader = null;
+    this.lastXTokenHeader = null;
+    this.unauthorizedHits = 0;
   }
 
   async start() {
@@ -71,6 +84,10 @@ class MockUnity {
       res.writeHead(404); res.end('nope'); return;
     }
 
+    // Capture the auth headers the sidecar sent (used by the token scenarios).
+    this.lastAuthHeader = req.headers['authorization'] || null;
+    this.lastXTokenHeader = req.headers['x-open-unity-mcp-token'] || null;
+
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
@@ -87,6 +104,20 @@ class MockUnity {
         // no response — a mid-flight reset on every POST until told otherwise.
         req.socket.destroy();
         return;
+      }
+
+      // Token gate (mirrors the real server: reject BEFORE running any tool).
+      if (this.requireToken) {
+        const bearer = this.lastAuthHeader && this.lastAuthHeader.startsWith('Bearer ')
+          ? this.lastAuthHeader.slice('Bearer '.length)
+          : null;
+        const presented = bearer || this.lastXTokenHeader || null;
+        if (presented !== this.token) {
+          this.unauthorizedHits++;
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Missing or invalid access token.' } }));
+          return;
+        }
       }
 
       let msg;
@@ -215,8 +246,14 @@ async function main() {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'oum-sidecar-fi-'));
   const mock = new MockUnity();
   await mock.start();
-  writeStatus(project, { state: 'running', port: mock.port, timestamp: Date.now() });
+  // Enforce a token from the start so every scenario also proves the sidecar
+  // attaches the token it read from the status file.
+  const TOKEN_A = 'a'.repeat(64);
+  mock.token = TOKEN_A;
+  mock.requireToken = true;
+  writeStatus(project, { state: 'running', port: mock.port, token: TOKEN_A, timestamp: Date.now() });
   console.log('  mock port=' + mock.port + ' project=' + project);
+  console.log('  token enforcement ON (token in status file)');
   console.log('');
 
   const sidecar = new Sidecar(mock.port, project, 8000);
@@ -232,13 +269,13 @@ async function main() {
 
     // Scenario 2: connect-level outage on a tools/call, then recover -> retried,
     // normal result, no error. (Connect-level is safe to retry even for tools/call.)
-    writeStatus(project, { state: 'reloading', port: mock.port, timestamp: Date.now() });
+    writeStatus(project, { state: 'reloading', port: mock.port, token: mock.token, timestamp: Date.now() });
     await mock.goDown();
     const hitsBefore = mock.mcpHits;
     const pending = sidecar.request('tools/call', { name: 'unity.get_project_info', arguments: {} }, 20000);
     await sleep(600); // sidecar is now polling /health with the listener down
     await mock.comeUp();
-    writeStatus(project, { state: 'running', port: mock.port, timestamp: Date.now() });
+    writeStatus(project, { state: 'running', port: mock.port, token: mock.token, timestamp: Date.now() });
     const r2 = await pending;
     record('connect-outage tools/call retried', isResult(r2.message) && !isError(r2.message) && !isReloadEnvelope(r2.message), r2.ms,
       'delivered live result after recovery');
@@ -263,6 +300,28 @@ async function main() {
     const posts4 = mock.mcpHits - hitsPre4;
     record('midflight idempotent tools/list retried', isResult(r4.message) && !isError(r4.message) && !isReloadEnvelope(r4.message) && posts4 === 2, r4.ms,
       'live result, tools=' + (r4.message.result?.tools?.length ?? 0) + ', /mcp POSTs=' + posts4 + ' (2 = resent)');
+
+    // Scenario 7: the sidecar attached the access token on the last live request.
+    // Every prior /mcp POST already passed the mock's requireToken gate (else they
+    // would have 401'd and the scenarios above would have failed), but assert the
+    // headers explicitly for clarity.
+    record('access token attached on forward',
+      mock.lastAuthHeader === 'Bearer ' + TOKEN_A && mock.lastXTokenHeader === TOKEN_A, 0,
+      'authorization=' + JSON.stringify(mock.lastAuthHeader) + ' x-token-present=' + (mock.lastXTokenHeader === TOKEN_A));
+
+    // Scenario 8: token rotation. The editor rebinds with a NEW token and rejects
+    // the stale one with a 401. The sidecar should silently re-read the status file
+    // and resend once, so the client never sees a 401 — just a normal result.
+    const TOKEN_B = 'b'.repeat(64);
+    const unauthorizedBefore = mock.unauthorizedHits;
+    mock.token = TOKEN_B; // rotate; sidecar still holds TOKEN_A in its cache
+    writeStatus(project, { state: 'running', port: mock.port, token: TOKEN_B, timestamp: Date.now() });
+    const r8 = await sidecar.request('tools/call', { name: 'unity.get_project_info', arguments: {} }, 20000);
+    const rejected = mock.unauthorizedHits - unauthorizedBefore;
+    record('rotated token: 401 re-read and resent silently',
+      isResult(r8.message) && !isError(r8.message) && rejected === 1 &&
+        mock.lastAuthHeader === 'Bearer ' + TOKEN_B, r8.ms,
+      '401s=' + rejected + ' (1 = one rejection then re-read), client saw result');
 
     // Scenario 5: server genuinely gone (status=stopped) -> JSON-RPC error.
     await mock.goDown();

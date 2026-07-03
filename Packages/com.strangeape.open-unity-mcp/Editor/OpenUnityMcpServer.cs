@@ -20,12 +20,24 @@ namespace StrangeApe.OpenUnityMcp
         private static volatile bool _running;
         private static int _port;
 
+        // Auth snapshot captured on the main thread at Start(). The accept loop and
+        // its ThreadPool workers must never read EditorPrefs (main-thread-only), so
+        // the required flag and token are copied here once per server start. A
+        // settings change therefore takes effect on the next server start.
+        private static volatile bool _requireToken;
+        private static volatile string _accessToken;
+
         public static bool IsRunning => _running;
         public static int Port => _port;
         public static string Endpoint => "http://127.0.0.1:" + _port + "/mcp";
 
         public static void Start(int port)
         {
+            // Snapshot auth settings on the calling (main) thread before any request
+            // is served; EditorPrefs is not safe to read from the accept loop.
+            var requireToken = OpenUnityMcpSettings.RequireAccessToken;
+            var accessToken = OpenUnityMcpSettings.AccessToken;
+
             lock (Gate)
             {
                 if (_running)
@@ -34,6 +46,8 @@ namespace StrangeApe.OpenUnityMcp
                 }
 
                 _port = port;
+                _requireToken = requireToken;
+                _accessToken = accessToken;
                 _listener = new TcpListener(IPAddress.Loopback, port);
                 _listener.Start();
                 _running = true;
@@ -45,8 +59,11 @@ namespace StrangeApe.OpenUnityMcp
                 _thread.Start();
             }
 
-            UnityMcpStatusFile.WriteRunning(port);
-            Debug.Log("[Open Unity MCP] Listening on " + Endpoint);
+            // The token is always written to the status file (whether or not
+            // enforcement is on) so the sidecar can attach it unconditionally.
+            UnityMcpStatusFile.WriteRunning(port, accessToken);
+            Debug.Log("[Open Unity MCP] Listening on " + Endpoint +
+                      (requireToken ? " (access token required)" : string.Empty));
         }
 
         public static void Stop()
@@ -151,6 +168,17 @@ namespace StrangeApe.OpenUnityMcp
                 return new HttpResponse(404, "text/plain; charset=utf-8", "Not found.");
             }
 
+            // /health stays unauthenticated (liveness probe, no sensitive data); the
+            // token gate applies only to /mcp. Enforced only when the user opted in.
+            if (_requireToken && !HasValidAccessToken(request))
+            {
+                return new HttpResponse(401, "application/json", JsonRpcError(null, -32001,
+                    "Missing or invalid access token. Open Unity MCP requires an access token for /mcp. " +
+                    "Copy the token from Preferences > Open Unity MCP and send it as an " +
+                    "'Authorization: Bearer <token>' or 'X-Open-Unity-Mcp-Token: <token>' header."),
+                    "WWW-Authenticate: Bearer\r\n");
+            }
+
             if (string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase))
             {
                 return new HttpResponse(405, "application/json", JsonRpcError(null, -32601, "SSE is not implemented. Use POST for JSON-RPC requests."), "Allow: POST\r\n");
@@ -173,6 +201,43 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             return new HttpResponse(protocolResponse.HttpStatus, "application/json", protocolResponse.Body);
+        }
+
+        // True when the request carries the configured access token via either the
+        // standard Authorization: Bearer header or the X-Open-Unity-Mcp-Token header
+        // (for clients that cannot set Authorization). Ordinal comparison is fine on
+        // a loopback-only server. Header keys are stored lowercased by the parser.
+        private static bool HasValidAccessToken(HttpRequest request)
+        {
+            var expected = _accessToken;
+            if (string.IsNullOrEmpty(expected))
+            {
+                // Enforcement is on but no token was snapshotted — fail closed.
+                return false;
+            }
+
+            if (request.Headers.TryGetValue("authorization", out var authorization) && !string.IsNullOrEmpty(authorization))
+            {
+                const string bearerPrefix = "Bearer ";
+                if (authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    var candidate = authorization.Substring(bearerPrefix.Length).Trim();
+                    if (string.Equals(candidate, expected, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (request.Headers.TryGetValue("x-open-unity-mcp-token", out var headerToken) && !string.IsNullOrEmpty(headerToken))
+            {
+                if (string.Equals(headerToken.Trim(), expected, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsLocalOrigin(HttpRequest request)
@@ -330,6 +395,8 @@ namespace StrangeApe.OpenUnityMcp
                     return "Accepted";
                 case 400:
                     return "Bad Request";
+                case 401:
+                    return "Unauthorized";
                 case 403:
                     return "Forbidden";
                 case 404:
