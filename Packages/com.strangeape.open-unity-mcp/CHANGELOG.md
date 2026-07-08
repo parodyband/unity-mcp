@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.12.0
+## 0.13.0
+
+- Fixed MCP requests stalling while the Unity editor window is unfocused on Windows. A backgrounded editor parks its tick loop, so the main-thread pump (`EditorApplication.update`) stopped firing and queued requests waited until the window was clicked back into focus. While the server is running, a Win32 `SetTimer` callback (100 ms) on the main thread — which keeps pumping OS messages even when the tick loop is parked — now calls `EditorApplication.QueuePlayerLoopUpdate()` so requests, compilation progress, and pending restarts keep flowing in the background. The timer is torn down with the server (including before every assembly reload and on editor quit) so no native callback can reach an unloaded domain. Windows-only; macOS/Linux editors already tick in the background, and users no longer need the `Interaction Mode: No Throttling` preference workaround.
 
 - Added an opt-in access token for the in-editor MCP server (addresses the "no authentication = local RCE" review finding). It is **off by default**: `/mcp` is gated only by the loopback-origin check unless you enable "Require Access Token" in `Preferences > Open Unity MCP`.
 - When enabled, `POST /mcp` requires the token via `Authorization: Bearer <token>` (or `X-Open-Unity-Mcp-Token: <token>` for clients that cannot set `Authorization`); a missing or wrong token returns `401` with a JSON-RPC error explaining where to find the token. `/health` stays unauthenticated (liveness probe, no sensitive data).

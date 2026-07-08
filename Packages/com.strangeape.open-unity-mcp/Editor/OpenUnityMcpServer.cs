@@ -59,6 +59,10 @@ namespace StrangeApe.OpenUnityMcp
                 _thread.Start();
             }
 
+            // Start/Stop are only ever called on the main thread (bootstrap update tick,
+            // overlay, preferences, tests), which the Win32 wake timer requires.
+            UnityMcpBackgroundWake.Start();
+
             // The token is always written to the status file (whether or not
             // enforcement is on) so the sidecar can attach it unconditionally.
             UnityMcpStatusFile.WriteRunning(port, accessToken);
@@ -89,6 +93,7 @@ namespace StrangeApe.OpenUnityMcp
                 _thread = null;
             }
 
+            UnityMcpBackgroundWake.Stop();
             Debug.Log("[Open Unity MCP] Stopped.");
         }
 
