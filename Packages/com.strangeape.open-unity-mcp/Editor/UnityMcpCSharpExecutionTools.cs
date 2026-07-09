@@ -314,11 +314,16 @@ namespace StrangeApe.OpenUnityMcp
         {
             var editorDirectory = Path.GetDirectoryName(_editorApplicationPath);
             var dataDirectory = Path.Combine(editorDirectory ?? string.Empty, "Data");
-            var candidates = new[]
-            {
-                Path.Combine(dataDirectory, "MonoBleedingEdge", "bin", "mono.exe"),
-                Path.Combine(dataDirectory, "MonoBleedingEdge", "bin", "mono")
-            };
+            var monoBin = Path.Combine(dataDirectory, "MonoBleedingEdge", "bin");
+
+            // Unity ships both the Windows PE (mono.exe) and the native ELF (mono) side by
+            // side even in the Linux editor. Launching mono.exe on Linux fails with a native
+            // "Access denied" because it is not an executable image for that OS, so pick the
+            // binary that matches the current platform first.
+            var onWindows = Environment.OSVersion.Platform == PlatformID.Win32NT;
+            var candidates = onWindows
+                ? new[] { Path.Combine(monoBin, "mono.exe"), Path.Combine(monoBin, "mono") }
+                : new[] { Path.Combine(monoBin, "mono"), Path.Combine(monoBin, "mono.exe") };
 
             foreach (var candidate in candidates)
             {

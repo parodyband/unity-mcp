@@ -1,6 +1,6 @@
 {
   "name": "com.strangeape.open-unity-mcp",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "displayName": "Open Unity MCP",
   "description": "A small in-editor Model Context Protocol server for Unity 6 and newer.",
   "unity": "6000.0",

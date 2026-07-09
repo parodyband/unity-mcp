@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.1
+
+- Fixed `unity.execute_csharp` failing to compile on the Linux (and macOS) editor with `Tool failed: ... Native error= Access denied`. Unity ships both the Windows PE (`mono.exe`) and the native ELF (`mono`) side by side under `Data/MonoBleedingEdge/bin` even in the Linux editor, and `ResolveMonoRuntimePath` listed `mono.exe` first — so on Linux the runtime launched the Windows binary, which is not an executable image for that OS. Candidate order is now platform-aware (`mono.exe` first on Windows, `mono` first elsewhere), so the compile stage runs the compiler through the correct Mono runtime. This is what broke the `ExecuteCSharpCompilesAndRunsThroughToolCall` smoke test on the `ubuntu-latest` CI runner.
+
 ## 0.13.0
 
 - Fixed MCP requests stalling while the Unity editor window is unfocused on Windows. A backgrounded editor parks its tick loop, so the main-thread pump (`EditorApplication.update`) stopped firing and queued requests waited until the window was clicked back into focus. While the server is running, a Win32 `SetTimer` callback (100 ms) on the main thread — which keeps pumping OS messages even when the tick loop is parked — now calls `EditorApplication.QueuePlayerLoopUpdate()` so requests, compilation progress, and pending restarts keep flowing in the background. The timer is torn down with the server (including before every assembly reload and on editor quit) so no native callback can reach an unloaded domain. Windows-only; macOS/Linux editors already tick in the background, and users no longer need the `Interaction Mode: No Throttling` preference workaround.
