@@ -100,7 +100,7 @@ namespace StrangeApe.OpenUnityMcp
                 "serverInfo", McpJson.Object(
                     "name", "open-unity-mcp",
                     "title", "Open Unity MCP",
-                    "version", "0.12.0",
+                    "version", "0.14.0",
                     "description", "A small in-editor MCP server for Unity."),
                 "instructions", "Use Unity tools for project inspection and editor automation. Most file writes are limited to Assets and Packages. The unity.execute_csharp fallback runs unrestricted editor C# and should be approval-gated.");
         }

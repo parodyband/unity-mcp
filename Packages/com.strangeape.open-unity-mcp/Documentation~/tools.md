@@ -51,7 +51,7 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 
 - `unity.execute_csharp`
 
-`unity.execute_csharp` compiles transient editor C# under `Temp/OpenUnityMcp/ExecuteCSharp` and invokes a static method. By default, `code` is wrapped as statements inside `StrangeApe.OpenUnityMcp.Generated.OpenUnityMcpUserCode.Execute`; use `return` to return a value. Set `wrap=false` and provide `entryPoint` for full source. This tool can do anything editor C# can do and should be client approval-gated.
+`unity.execute_csharp` compiles transient editor C# under `Temp/OpenUnityMcp/ExecuteCSharp` and invokes a static method. By default, `code` is wrapped as statements inside `StrangeApe.OpenUnityMcp.Generated.OpenUnityMcpUserCode.Execute`; use `return` to return a value. Set `wrap=false` and provide `entryPoint` for full source. The response keeps compiler `stdout`/`stderr` separate from invocation output: `runtimeStdout` captures `System.Console.Write`/`WriteLine`, `runtimeStderr` captures `System.Console.Error`, and `logs` captures `Debug.Log`, warnings, errors, and exceptions emitted during invocation. Use `logLimit` (0-200, default 50) to bound Unity log capture. For structured inspection, prefer returning a JSON-safe value instead of relying on logs. This tool can do anything editor C# can do and should be client approval-gated.
 
 ## Scenes And Hierarchy
 

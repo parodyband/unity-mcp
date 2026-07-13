@@ -14,6 +14,17 @@ namespace StrangeApe.OpenUnityMcp
     internal static class UnityMcpCSharpExecutionTools
     {
         private const int MaxCodeChars = 200000;
+        private const int DefaultLogLimit = 50;
+        private const int MaxLogLimit = 200;
+        // Keep the largest possible captured payload comfortably below the server's 1 MiB
+        // response-body limit: 2 x 50k stream chars plus 200 x 2 x 1k log-field chars.
+        private const int MaxCapturedStreamChars = 50000;
+        private const int MaxCapturedLogFieldChars = 1000;
+
+        // Console.Out/Error are process-wide. Serializing the short in-process execution
+        // window prevents concurrent execute_csharp calls from replacing one another's
+        // writers while still allowing the external compiler stage to run concurrently.
+        private static readonly object ConsoleCaptureLock = new object();
 
         // Bounds the main-thread execution stage (Assembly.Load + entry-point Invoke +
         // result serialization). The compile stage runs off the main thread, so this only
@@ -33,13 +44,14 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool ExecuteCSharp = new McpTool(
             "unity.execute_csharp",
-            "Compile and execute transient Unity editor C# code. This is an unrestricted fallback tool and should be approval-gated by MCP clients. The compile stage runs off the editor main thread so it does not freeze the UI; the compiled code itself then runs on the main thread, where an unbounded loop can still hang the editor.",
+            "Compile and execute transient Unity editor C# code. Returns the method result plus runtime Console.Out text and Unity log messages emitted during invocation. This is an unrestricted fallback tool and should be approval-gated by MCP clients. The compile stage runs off the editor main thread so it does not freeze the UI; the compiled code itself then runs on the main thread, where an unbounded loop can still hang the editor.",
             McpToolRegistry.ObjectSchema(
                 "code", McpToolRegistry.StringProperty("C# statements to run inside a generated static Execute method, or full source when wrap=false."),
                 "wrap", McpToolRegistry.BooleanProperty("Wrap code in a generated editor static method. Defaults to true."),
                 "entryPoint", McpToolRegistry.StringProperty("Static method to invoke as Namespace.Type.Method. Defaults to the generated wrapper entry point."),
                 "timeoutSeconds", McpToolRegistry.IntegerProperty("Compiler process timeout in seconds.", 1, 60),
                 "allowUnsafe", McpToolRegistry.BooleanProperty("Compile with /unsafe enabled."),
+                "logLimit", McpToolRegistry.IntegerProperty("Maximum Unity log entries to capture during invocation. Defaults to 50; use 0 to disable log capture.", 0, MaxLogLimit),
                 new[] { "code" }),
             ExecuteCSharpImpl,
             // The compiler process alone may take the full 60s timeoutSeconds before user code runs.
@@ -70,6 +82,7 @@ namespace StrangeApe.OpenUnityMcp
             var entryPoint = McpJson.AsString(args, "entryPoint", DefaultEntryPoint(wrap));
             var timeoutSeconds = Math.Max(1, Math.Min(60, McpJson.AsInt(args, "timeoutSeconds", 15)));
             var allowUnsafe = McpJson.AsBool(args, "allowUnsafe", false);
+            var logLimit = Math.Max(0, Math.Min(MaxLogLimit, McpJson.AsInt(args, "logLimit", DefaultLogLimit)));
 
             // Stage 2 (caller thread): write temp files, run the compiler process, read the
             // resulting assembly bytes. No Unity API is touched here, so the editor UI stays
@@ -125,14 +138,14 @@ namespace StrangeApe.OpenUnityMcp
             // Stage 3 (main thread): loading the assembly and running user code touches Unity
             // APIs, so it is marshaled back onto the main thread with its own bounded timeout.
             return UnityMainThread.Invoke(
-                () => ExecuteStage(assemblyBytes, entryPoint, sourcePath, assemblyPath, compile),
+                () => ExecuteStage(assemblyBytes, entryPoint, sourcePath, assemblyPath, compile, logLimit),
                 ExecutionStageTimeoutSeconds);
         }
 
         // Runs on the main thread. Re-checks isCompiling/isUpdating to guard the rare race
         // where the editor started compiling between stage 1 and stage 3: loading into a
         // domain that is about to be torn down would be unsafe, so bail with the same error.
-        private static Dictionary<string, object> ExecuteStage(byte[] assemblyBytes, string entryPoint, string sourcePath, string assemblyPath, CompileResult compile)
+        private static Dictionary<string, object> ExecuteStage(byte[] assemblyBytes, string entryPoint, string sourcePath, string assemblyPath, CompileResult compile, int logLimit)
         {
             if (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
@@ -140,13 +153,14 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             var stopwatch = Stopwatch.StartNew();
+            var capture = new ExecutionCapture(logLimit);
             try
             {
                 // Loading from bytes keeps the temp .dll deletable; the assembly itself still
                 // stays in the domain until the next reload, which is inherent to in-process code.
                 var assembly = Assembly.Load(assemblyBytes);
                 var method = ResolveEntryPoint(assembly, entryPoint);
-                var result = method.Invoke(null, null);
+                var result = capture.Invoke(method);
                 stopwatch.Stop();
 
                 return JsonText(McpJson.Object(
@@ -158,18 +172,22 @@ namespace StrangeApe.OpenUnityMcp
                     "elapsedMilliseconds", stopwatch.ElapsedMilliseconds,
                     "stdout", compile.Stdout,
                     "stderr", compile.Stderr,
+                    "runtimeStdout", capture.Stdout,
+                    "runtimeStderr", capture.Stderr,
+                    "logs", capture.Logs,
+                    "logsTruncated", capture.LogsTruncated,
                     "resultType", result != null ? result.GetType().FullName : string.Empty,
                     "result", ToJsonSafe(result, 0)));
             }
             catch (TargetInvocationException ex)
             {
                 stopwatch.Stop();
-                return ExecutionError(entryPoint, sourcePath, assemblyPath, stopwatch.ElapsedMilliseconds, ex.InnerException ?? ex);
+                return ExecutionError(entryPoint, sourcePath, assemblyPath, stopwatch.ElapsedMilliseconds, ex.InnerException ?? ex, capture);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                return ExecutionError(entryPoint, sourcePath, assemblyPath, stopwatch.ElapsedMilliseconds, ex);
+                return ExecutionError(entryPoint, sourcePath, assemblyPath, stopwatch.ElapsedMilliseconds, ex, capture);
             }
         }
 
@@ -508,7 +526,7 @@ namespace StrangeApe.OpenUnityMcp
             return Convert.ToString(value, CultureInfo.InvariantCulture);
         }
 
-        private static Dictionary<string, object> ExecutionError(string entryPoint, string sourcePath, string assemblyPath, long elapsedMilliseconds, Exception ex)
+        private static Dictionary<string, object> ExecutionError(string entryPoint, string sourcePath, string assemblyPath, long elapsedMilliseconds, Exception ex, ExecutionCapture capture)
         {
             return JsonText(McpJson.Object(
                 "compiled", true,
@@ -517,10 +535,151 @@ namespace StrangeApe.OpenUnityMcp
                 "sourcePath", UnityMcpPathUtility.MakeProjectRelative(sourcePath),
                 "assemblyPath", UnityMcpPathUtility.MakeProjectRelative(assemblyPath),
                 "elapsedMilliseconds", elapsedMilliseconds,
+                "runtimeStdout", capture != null ? capture.Stdout : string.Empty,
+                "runtimeStderr", capture != null ? capture.Stderr : string.Empty,
+                "logs", capture != null ? capture.Logs : new List<object>(),
+                "logsTruncated", capture != null && capture.LogsTruncated,
                 "exception", McpJson.Object(
                     "type", ex.GetType().FullName,
                     "message", ex.Message,
                     "stackTrace", ex.StackTrace ?? string.Empty)), true);
+        }
+
+        private sealed class ExecutionCapture
+        {
+            private readonly int _logLimit;
+            private readonly BoundedTextWriter _stdoutWriter = new BoundedTextWriter(MaxCapturedStreamChars);
+            private readonly BoundedTextWriter _stderrWriter = new BoundedTextWriter(MaxCapturedStreamChars);
+            private readonly List<object> _logs = new List<object>();
+            private bool _logsTruncated;
+
+            public ExecutionCapture(int logLimit)
+            {
+                _logLimit = logLimit;
+            }
+
+            public string Stdout => _stdoutWriter.GetText();
+            public string Stderr => _stderrWriter.GetText();
+            public List<object> Logs => _logs;
+            public bool LogsTruncated => _logsTruncated;
+
+            public object Invoke(MethodInfo method)
+            {
+                lock (ConsoleCaptureLock)
+                {
+                    var previousOut = Console.Out;
+                    var previousError = Console.Error;
+                    try
+                    {
+                        Console.SetOut(_stdoutWriter);
+                        Console.SetError(_stderrWriter);
+                        if (_logLimit > 0)
+                        {
+                            Application.logMessageReceived += OnLogMessage;
+                        }
+
+                        return method.Invoke(null, null);
+                    }
+                    finally
+                    {
+                        if (_logLimit > 0)
+                        {
+                            Application.logMessageReceived -= OnLogMessage;
+                        }
+
+                        Console.SetOut(previousOut);
+                        Console.SetError(previousError);
+                    }
+                }
+            }
+
+            private void OnLogMessage(string condition, string stackTrace, LogType type)
+            {
+                if (_logs.Count >= _logLimit)
+                {
+                    _logsTruncated = true;
+                    return;
+                }
+
+                _logs.Add(McpJson.Object(
+                    "type", type.ToString().ToLowerInvariant(),
+                    "message", Truncate(condition, MaxCapturedLogFieldChars),
+                    "stackTrace", Truncate(stackTrace, MaxCapturedLogFieldChars)));
+            }
+        }
+
+        private sealed class BoundedTextWriter : System.IO.TextWriter
+        {
+            private const string TruncatedMarker = "\n[output truncated]";
+            private readonly int _maxChars;
+            private readonly StringBuilder _builder = new StringBuilder();
+            private bool _truncated;
+
+            public BoundedTextWriter(int maxChars)
+            {
+                _maxChars = maxChars;
+            }
+
+            public override Encoding Encoding => Encoding.UTF8;
+
+            public override void Write(char value)
+            {
+                Append(value.ToString());
+            }
+
+            public override void Write(string value)
+            {
+                Append(value);
+            }
+
+            public override void Write(char[] buffer, int index, int count)
+            {
+                if (buffer == null)
+                {
+                    return;
+                }
+
+                Append(new string(buffer, index, count));
+            }
+
+            public string GetText()
+            {
+                return _builder + (_truncated ? TruncatedMarker : string.Empty);
+            }
+
+            private void Append(string value)
+            {
+                if (string.IsNullOrEmpty(value))
+                {
+                    return;
+                }
+
+                if (_builder.Length >= _maxChars)
+                {
+                    _truncated = true;
+                    return;
+                }
+
+                var remaining = _maxChars - _builder.Length;
+                if (value.Length > remaining)
+                {
+                    _builder.Append(value, 0, remaining);
+                    _truncated = true;
+                    return;
+                }
+
+                _builder.Append(value);
+            }
+        }
+
+        private static string Truncate(string value, int maxChars)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length <= maxChars)
+            {
+                return value ?? string.Empty;
+            }
+
+            return value.Substring(0, maxChars) + "\n[output truncated]";
         }
 
         private static void TryDeleteFile(string path)

@@ -187,6 +187,28 @@ namespace StrangeApe.OpenUnityMcp.Tests
             StringAssert.Contains("\"result\":2", text);
         }
 
+        [Test]
+        public void ExecuteCSharpCapturesRuntimeConsoleAndUnityLogs()
+        {
+            var request = McpJson.Stringify(McpJson.Object(
+                "jsonrpc", "2.0",
+                "id", "exec-output",
+                "method", "tools/call",
+                "params", McpJson.Object(
+                    "name", "unity.execute_csharp",
+                    "arguments", McpJson.Object(
+                        "code", "System.Console.WriteLine(\"OpenUnityMcp stdout marker\"); UnityEngine.Debug.Log(\"OpenUnityMcp log marker\"); return 7;",
+                        "timeoutSeconds", 30))));
+            var response = McpProtocol.Handle(request);
+
+            Assert.AreEqual(200, response.HttpStatus);
+            var text = ExtractToolText(response);
+            StringAssert.Contains("\"executed\":true", text);
+            StringAssert.Contains("OpenUnityMcp stdout marker", text);
+            StringAssert.Contains("OpenUnityMcp log marker", text);
+            StringAssert.Contains("\"result\":7", text);
+        }
+
         private static string ExtractToolText(McpProtocolResponse response)
         {
             var body = McpJson.Parse(response.Body) as Dictionary<string, object>;

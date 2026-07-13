@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.0
+
+- Fixed `unity.execute_csharp` hiding output emitted by the invoked code. Runtime `System.Console` output is now returned separately from compiler output, and `Debug.Log`/warning/error messages are returned as bounded structured log entries. Added `logLimit` and documented returning values for structured inspection.
+
 ## 0.13.1
 
 - Fixed `unity.execute_csharp` failing to compile on the Linux (and macOS) editor with `Tool failed: ... Native error= Access denied`. Unity ships both the Windows PE (`mono.exe`) and the native ELF (`mono`) side by side under `Data/MonoBleedingEdge/bin` even in the Linux editor, and `ResolveMonoRuntimePath` listed `mono.exe` first — so on Linux the runtime launched the Windows binary, which is not an executable image for that OS. Candidate order is now platform-aware (`mono.exe` first on Windows, `mono` first elsewhere), so the compile stage runs the compiler through the correct Mono runtime. This is what broke the `ExecuteCSharpCompilesAndRunsThroughToolCall` smoke test on the `ubuntu-latest` CI runner.
