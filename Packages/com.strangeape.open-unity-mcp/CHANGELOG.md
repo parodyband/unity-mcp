@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1
+
+- Fixed `unity.execute_csharp` failing on macOS with `Could not find Unity's C# compiler.` Compiler and Mono runtime paths were derived from `EditorApplication.applicationPath` plus a `Data` folder, which only matches the Windows/Linux editor layout — on macOS the application path is the `Unity.app` bundle itself and MonoBleedingEdge lives under `Contents/Resources/Scripting`. Paths are now derived from `EditorApplication.applicationContentsPath` and both layouts are probed, so `execute_csharp` resolves the compiler on every platform. Thanks @jhusting (#1).
+
 ## 0.14.0
 
 - Fixed `unity.execute_csharp` hiding output emitted by the invoked code. Runtime `System.Console` output is now returned separately from compiler output, and `Debug.Log`/warning/error messages are returned as bounded structured log entries. Added `logLimit` and documented returning values for structured inspection.
