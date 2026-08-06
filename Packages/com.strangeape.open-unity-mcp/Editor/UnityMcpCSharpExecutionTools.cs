@@ -35,12 +35,12 @@ namespace StrangeApe.OpenUnityMcp
 
         // Snapshotted on the main thread in stage 1 (EnsureIdleAndPaths) so the
         // caller-thread compile stage never touches Application.dataPath or
-        // EditorApplication.applicationPath off-thread. Populated lazily rather than in an
+        // EditorApplication.applicationContentsPath off-thread. Populated lazily rather than in an
         // [InitializeOnLoadMethod] on purpose: forcing this type's static init at load time
         // reentrantly triggers McpToolRegistry's cctor while this tool's own field is still
         // null, which breaks the registry's name-sort. Stage 1 always runs before stage 2.
         private static string _projectRoot;
-        private static string _editorApplicationPath;
+        private static string _editorContentsPath;
 
         public static readonly McpTool ExecuteCSharp = new McpTool(
             "unity.execute_csharp",
@@ -205,9 +205,9 @@ namespace StrangeApe.OpenUnityMcp
                 _projectRoot = UnityMcpPathUtility.ProjectRoot;
             }
 
-            if (string.IsNullOrEmpty(_editorApplicationPath))
+            if (string.IsNullOrEmpty(_editorContentsPath))
             {
-                _editorApplicationPath = EditorApplication.applicationPath;
+                _editorContentsPath = EditorApplication.applicationContentsPath;
             }
 
             return null;
@@ -307,21 +307,50 @@ namespace StrangeApe.OpenUnityMcp
             }
         }
 
-        private static string ResolveCompilerPath()
+        // The MonoBleedingEdge folder sits directly under the editor "contents" directory
+        // on Windows/Linux (".../Editor/Data/MonoBleedingEdge") but under
+        // "Resources/Scripting" inside the app bundle on macOS
+        // (".../Unity.app/Contents/Resources/Scripting/MonoBleedingEdge"). Probe both so
+        // the compiler and runtime resolve on every platform. Deriving the base from
+        // applicationContentsPath also avoids the macOS pitfall that applicationPath points
+        // at the ".app" bundle itself, so GetDirectoryName(...) + "Data" lands nowhere.
+        private static string ResolveMonoBleedingEdgeRoot()
         {
-            var editorDirectory = Path.GetDirectoryName(_editorApplicationPath);
-            var dataDirectory = Path.Combine(editorDirectory ?? string.Empty, "Data");
+            var contents = _editorContentsPath ?? string.Empty;
             var candidates = new[]
             {
-                Path.Combine(dataDirectory, "MonoBleedingEdge", "lib", "mono", "4.5", "csc.exe"),
-                Path.Combine(dataDirectory, "MonoBleedingEdge", "lib", "mono", "msbuild", "Current", "bin", "Roslyn", "csc.exe")
+                Path.Combine(contents, "MonoBleedingEdge"),                          // Windows / Linux
+                Path.Combine(contents, "Resources", "Scripting", "MonoBleedingEdge")  // macOS
             };
 
             foreach (var candidate in candidates)
             {
-                if (File.Exists(candidate))
+                if (Directory.Exists(candidate))
                 {
                     return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private static string ResolveCompilerPath()
+        {
+            var monoRoot = ResolveMonoBleedingEdgeRoot();
+            if (monoRoot != null)
+            {
+                var candidates = new[]
+                {
+                    Path.Combine(monoRoot, "lib", "mono", "4.5", "csc.exe"),
+                    Path.Combine(monoRoot, "lib", "mono", "msbuild", "Current", "bin", "Roslyn", "csc.exe")
+                };
+
+                foreach (var candidate in candidates)
+                {
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
                 }
             }
 
@@ -330,9 +359,13 @@ namespace StrangeApe.OpenUnityMcp
 
         private static string ResolveMonoRuntimePath()
         {
-            var editorDirectory = Path.GetDirectoryName(_editorApplicationPath);
-            var dataDirectory = Path.Combine(editorDirectory ?? string.Empty, "Data");
-            var monoBin = Path.Combine(dataDirectory, "MonoBleedingEdge", "bin");
+            var monoRoot = ResolveMonoBleedingEdgeRoot();
+            if (monoRoot == null)
+            {
+                return null;
+            }
+
+            var monoBin = Path.Combine(monoRoot, "bin");
 
             // Unity ships both the Windows PE (mono.exe) and the native ELF (mono) side by
             // side even in the Linux editor. Launching mono.exe on Linux fails with a native
