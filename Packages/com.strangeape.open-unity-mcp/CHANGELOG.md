@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.2
+
+- Blocked tools that force an `AssetDatabase` refresh or script compilation while the editor is in play mode (including enter/exit transitions), because refreshing or recompiling during play destabilizes the editor. `unity.refresh_assets`, `unity.request_script_compilation`, `unity.import_asset`, and the asset lifecycle tools (`create_asset`, `create_scriptable_object`, `create_folder`, `copy_asset`, `move_asset`, `delete_asset`) now return an error telling the agent to exit play mode first via `unity.set_play_mode`. `unity.write_asset_text` rejects refreshing writes during play (pass `refresh=false` to defer), and `unity.execute_menu_item` rejects `Assets/Refresh` and `Assets/Reimport All` during play.
+
 ## 0.14.1
 
 - Fixed `unity.execute_csharp` failing on macOS with `Could not find Unity's C# compiler.` Compiler and Mono runtime paths were derived from `EditorApplication.applicationPath` plus a `Data` folder, which only matches the Windows/Linux editor layout — on macOS the application path is the `Unity.app` bundle itself and MonoBleedingEdge lives under `Contents/Resources/Scripting`. Paths are now derived from `EditorApplication.applicationContentsPath` and both layouts are probed, so `execute_csharp` resolves the compiler on every platform. Thanks @jhusting (#1).

@@ -35,6 +35,8 @@ Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId
 
 `unity.write_asset_text` defers `AssetDatabase.Refresh()` by default for code-related files (`.cs`, `.asmdef`, `.asmref`, `.rsp`, and `.dll`) so agents can edit multiple files without forcing Unity to compile and reload assemblies mid-task. The tool result returns `requiresRefresh=true` and `nextTool="unity.refresh_assets"` when the write is pending import. Call `unity.refresh_assets` once after the batch of script/package edits is complete, then reconnect on `/health` if Unity reloads assemblies and call `unity.get_compilation_status` with `includeConsole=true`.
 
+Tools that force an `AssetDatabase` refresh or script compilation are unavailable while the editor is in play mode (including the enter/exit transitions), because refreshing or recompiling during play destabilizes the editor. This covers `unity.refresh_assets`, `unity.request_script_compilation`, `unity.import_asset`, `unity.create_asset`, `unity.create_scriptable_object`, `unity.create_folder`, `unity.copy_asset`, `unity.move_asset`, `unity.delete_asset`, refreshing `unity.write_asset_text` calls (pass `refresh=false` to write without refreshing during play), and `unity.execute_menu_item` with `Assets/Refresh` or `Assets/Reimport All`. Blocked calls return an error telling the agent to exit play mode first with `unity.set_play_mode`.
+
 ## Components And Serialized Properties
 
 - `unity.get_components`

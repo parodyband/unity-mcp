@@ -27,7 +27,7 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool RequestScriptCompilation = new McpTool(
             "unity.request_script_compilation",
-            "Ask Unity to recompile scripts. A successful compile can reload assemblies, temporarily disconnecting this in-process MCP server; it restarts after reload if it was running, so reconnect on /health and then poll unity.get_compilation_status with includeConsole=true.",
+            "Ask Unity to recompile scripts. A successful compile can reload assemblies, temporarily disconnecting this in-process MCP server; it restarts after reload if it was running, so reconnect on /health and then poll unity.get_compilation_status with includeConsole=true. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(),
             _ =>
             {
@@ -45,7 +45,8 @@ namespace StrangeApe.OpenUnityMcp
                         "includeConsole", true,
                         "logLimit", 100));
                 return JsonText(payload);
-            });
+            },
+            blockedInPlayMode: true);
 
         public static readonly McpTool GetBuildSettings = new McpTool(
             "unity.get_build_settings",

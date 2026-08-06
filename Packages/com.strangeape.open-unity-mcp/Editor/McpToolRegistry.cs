@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor;
 
 namespace StrangeApe.OpenUnityMcp
 {
@@ -17,7 +18,12 @@ namespace StrangeApe.OpenUnityMcp
         // responsible for hopping onto the main thread itself for any Unity-API work.
         public readonly bool RunOnCallerThread;
 
-        public McpTool(string name, string description, Dictionary<string, object> inputSchema, Func<Dictionary<string, object>, Dictionary<string, object>> execute, int timeoutSeconds = UnityMainThread.DefaultTimeoutSeconds, bool runOnCallerThread = false)
+        // When true, the tool is rejected while the editor is in (or entering/exiting)
+        // play mode. Forcing an AssetDatabase refresh or script compilation during play
+        // mode destabilizes the editor, so those tools refuse to run until play mode ends.
+        public readonly bool BlockedInPlayMode;
+
+        public McpTool(string name, string description, Dictionary<string, object> inputSchema, Func<Dictionary<string, object>, Dictionary<string, object>> execute, int timeoutSeconds = UnityMainThread.DefaultTimeoutSeconds, bool runOnCallerThread = false, bool blockedInPlayMode = false)
         {
             Name = name;
             Description = description;
@@ -25,6 +31,7 @@ namespace StrangeApe.OpenUnityMcp
             Execute = execute;
             TimeoutSeconds = timeoutSeconds;
             RunOnCallerThread = runOnCallerThread;
+            BlockedInPlayMode = blockedInPlayMode;
         }
     }
 
@@ -159,6 +166,11 @@ namespace StrangeApe.OpenUnityMcp
                 return ToolText("Tool '" + tool.Name + "' is disabled in Open Unity MCP preferences.", true);
             }
 
+            if (tool.BlockedInPlayMode && IsInPlayMode())
+            {
+                return PlayModeBlockedResult(tool.Name);
+            }
+
             return ExecuteGuarded(tool, arguments);
         }
 
@@ -173,7 +185,27 @@ namespace StrangeApe.OpenUnityMcp
                 return ToolText("Tool '" + tool.Name + "' is disabled in Open Unity MCP preferences.", true);
             }
 
+            if (tool.BlockedInPlayMode && UnityMainThread.Invoke(IsInPlayMode))
+            {
+                return PlayModeBlockedResult(tool.Name);
+            }
+
             return ExecuteGuarded(tool, arguments);
+        }
+
+        // Main-thread only. Covers active play mode plus the enter/exit transitions,
+        // where refresh and compilation are just as unsafe.
+        internal static bool IsInPlayMode()
+        {
+            return EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode;
+        }
+
+        internal static Dictionary<string, object> PlayModeBlockedResult(string toolName)
+        {
+            return ToolText(
+                "Cannot run '" + toolName + "' while the editor is in play mode: forcing an asset refresh or script compilation during play mode destabilizes the editor. " +
+                "Exit play mode first (unity.set_play_mode with isPlaying=false), then retry.",
+                true);
         }
 
         private static Dictionary<string, object> ExecuteGuarded(McpTool tool, Dictionary<string, object> arguments)

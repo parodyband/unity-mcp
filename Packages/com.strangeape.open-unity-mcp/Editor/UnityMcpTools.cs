@@ -48,7 +48,7 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool WriteAssetText = new McpTool(
             "unity.write_asset_text",
-            "Write a UTF-8 text file under Assets or Packages. Code-related files defer AssetDatabase refresh by default to avoid immediate script compilation.",
+            "Write a UTF-8 text file under Assets or Packages. Code-related files defer AssetDatabase refresh by default to avoid immediate script compilation. Refreshing writes are unavailable while the editor is in play mode; pass refresh=false to write during play.",
             McpToolRegistry.ObjectSchema(
                 "path", McpToolRegistry.StringProperty("Project-relative path under Assets or Packages."),
                 "text", McpToolRegistry.StringProperty("UTF-8 text to write."),
@@ -59,7 +59,7 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool RefreshAssets = new McpTool(
             "unity.refresh_assets",
-            "Refresh Unity's AssetDatabase. This can compile code-related changes and temporarily disconnect the in-process MCP server during assembly reload.",
+            "Refresh Unity's AssetDatabase. This can compile code-related changes and temporarily disconnect the in-process MCP server during assembly reload. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(),
             _ =>
             {
@@ -69,7 +69,8 @@ namespace StrangeApe.OpenUnityMcp
                     "refreshed", true,
                     "serverMayTemporarilyDisconnect", true,
                     "recommendedRecovery", CreateReconnectPayload()));
-            });
+            },
+            blockedInPlayMode: true);
 
         public static readonly McpTool GetConsoleLogs = new McpTool(
             "unity.get_console_logs",
@@ -155,6 +156,14 @@ namespace StrangeApe.OpenUnityMcp
             var refresh = args != null && args.ContainsKey("refresh")
                 ? McpJson.AsBool(args, "refresh", false)
                 : !codeRelatedAsset;
+            if (refresh && McpToolRegistry.IsInPlayMode())
+            {
+                return McpToolRegistry.ToolText(
+                    "Cannot write '" + normalizedPath + "' with an AssetDatabase refresh while the editor is in play mode: refreshing during play mode destabilizes the editor. " +
+                    "Pass refresh=false to write without refreshing, or exit play mode first (unity.set_play_mode with isPlaying=false).",
+                    true);
+            }
+
             var directory = Path.GetDirectoryName(fullPath);
 
             if (!Directory.Exists(directory))
@@ -213,6 +222,13 @@ namespace StrangeApe.OpenUnityMcp
         private static Dictionary<string, object> ExecuteMenuItemImpl(Dictionary<string, object> args)
         {
             var menuItem = RequireString(args, "menuItem");
+            if (McpToolRegistry.IsInPlayMode() &&
+                (string.Equals(menuItem, "Assets/Refresh", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(menuItem, "Assets/Reimport All", StringComparison.OrdinalIgnoreCase)))
+            {
+                return McpToolRegistry.PlayModeBlockedResult("unity.execute_menu_item (" + menuItem + ")");
+            }
+
             var success = EditorApplication.ExecuteMenuItem(menuItem);
             return JsonText(McpJson.Object(
                 "menuItem", menuItem,

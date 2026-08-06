@@ -10,60 +10,66 @@ namespace StrangeApe.OpenUnityMcp
     {
         public static readonly McpTool CreateFolder = new McpTool(
             "unity.create_folder",
-            "Create a folder under Assets or Packages.",
+            "Create a folder under Assets or Packages. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(
                 "path", McpToolRegistry.StringProperty("Project-relative folder path under Assets or Packages."),
                 new[] { "path" }),
-            CreateFolderImpl);
+            CreateFolderImpl,
+            blockedInPlayMode: true);
 
         public static readonly McpTool CreateAsset = new McpTool(
             "unity.create_asset",
-            "Create a ScriptableObject asset under Assets or Packages.",
+            "Create a ScriptableObject asset under Assets or Packages. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(
                 "typeName", McpToolRegistry.StringProperty("ScriptableObject type name, such as MyNamespace.BoarHerdSettings or BoarHerdSettings."),
                 "path", McpToolRegistry.StringProperty("Project-relative .asset path under Assets or Packages."),
                 "createDirectories", McpToolRegistry.BooleanProperty("Create missing parent directories."),
                 new[] { "typeName", "path" }),
-            CreateScriptableObjectImpl);
+            CreateScriptableObjectImpl,
+            blockedInPlayMode: true);
 
         public static readonly McpTool CreateScriptableObject = new McpTool(
             "unity.create_scriptable_object",
-            "Create a ScriptableObject asset under Assets or Packages.",
+            "Create a ScriptableObject asset under Assets or Packages. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(
                 "typeName", McpToolRegistry.StringProperty("ScriptableObject type name, such as MyNamespace.BoarHerdSettings or BoarHerdSettings."),
                 "path", McpToolRegistry.StringProperty("Project-relative .asset path under Assets or Packages."),
                 "createDirectories", McpToolRegistry.BooleanProperty("Create missing parent directories."),
                 new[] { "typeName", "path" }),
-            CreateScriptableObjectImpl);
+            CreateScriptableObjectImpl,
+            blockedInPlayMode: true);
 
         public static readonly McpTool CopyAsset = new McpTool(
             "unity.copy_asset",
-            "Copy an asset or folder under Assets or Packages.",
+            "Copy an asset or folder under Assets or Packages. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(
                 "sourcePath", McpToolRegistry.StringProperty("Existing project-relative asset or folder path under Assets or Packages."),
                 "destinationPath", McpToolRegistry.StringProperty("New project-relative asset or folder path under Assets or Packages."),
                 "createDirectories", McpToolRegistry.BooleanProperty("Create missing destination parent folders."),
                 new[] { "sourcePath", "destinationPath" }),
-            CopyAssetImpl);
+            CopyAssetImpl,
+            blockedInPlayMode: true);
 
         public static readonly McpTool MoveAsset = new McpTool(
             "unity.move_asset",
-            "Move or rename an asset or folder under Assets or Packages.",
+            "Move or rename an asset or folder under Assets or Packages. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(
                 "sourcePath", McpToolRegistry.StringProperty("Existing project-relative asset or folder path under Assets or Packages."),
                 "destinationPath", McpToolRegistry.StringProperty("New project-relative asset or folder path under Assets or Packages."),
                 "createDirectories", McpToolRegistry.BooleanProperty("Create missing destination parent folders."),
                 new[] { "sourcePath", "destinationPath" }),
-            MoveAssetImpl);
+            MoveAssetImpl,
+            blockedInPlayMode: true);
 
         public static readonly McpTool DeleteAsset = new McpTool(
             "unity.delete_asset",
-            "Delete an asset or folder under Assets or Packages. Folder deletion requires recursive=true.",
+            "Delete an asset or folder under Assets or Packages. Folder deletion requires recursive=true. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(
                 "path", McpToolRegistry.StringProperty("Project-relative asset or folder path under Assets or Packages."),
                 "recursive", McpToolRegistry.BooleanProperty("Allow deleting a folder and its contents."),
                 new[] { "path" }),
-            DeleteAssetImpl);
+            DeleteAssetImpl,
+            blockedInPlayMode: true);
 
         public static readonly McpTool GetAssetMetadata = new McpTool(
             "unity.get_asset_metadata",
@@ -76,12 +82,13 @@ namespace StrangeApe.OpenUnityMcp
 
         public static readonly McpTool ImportAsset = new McpTool(
             "unity.import_asset",
-            "Import one asset path through AssetDatabase.ImportAsset.",
+            "Import one asset path through AssetDatabase.ImportAsset. Unavailable while the editor is in play mode.",
             McpToolRegistry.ObjectSchema(
                 "path", McpToolRegistry.StringProperty("Project-relative asset path under Assets or Packages."),
                 "forceUpdate", McpToolRegistry.BooleanProperty("Force Unity to re-import the asset."),
                 new[] { "path" }),
-            ImportAssetImpl);
+            ImportAssetImpl,
+            blockedInPlayMode: true);
 
         private static Dictionary<string, object> CreateFolderImpl(Dictionary<string, object> args)
         {
