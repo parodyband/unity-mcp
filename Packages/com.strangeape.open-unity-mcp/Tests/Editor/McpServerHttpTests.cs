@@ -53,8 +53,13 @@ namespace StrangeApe.OpenUnityMcp.Tests
             yield return WaitForTask(toolsTask);
 
             var tools = toolsTask.Result;
-            StringAssert.Contains("\"unity.get_project_info\"", tools);
-            StringAssert.Contains("\"unity.write_asset_text\"", tools);
+            StringAssert.Contains("\"unity.discover_tools\"", tools);
+            StringAssert.Contains("\"unity.batch\"", tools);
+
+            var dispatchTask = PostAsync(port, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"unity.call_tool\",\"arguments\":{\"name\":\"unity.get_open_scenes\",\"arguments\":{}}}}");
+            yield return WaitForTask(dispatchTask);
+            StringAssert.Contains("\"structuredContent\"", dispatchTask.Result);
+            StringAssert.Contains("\"isError\":false", dispatchTask.Result);
         }
 
         private static Task<string> PostAsync(int port, string body)

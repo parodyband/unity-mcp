@@ -193,6 +193,9 @@ namespace StrangeApe.OpenUnityMcp
 
         private static void DrawToolsGui()
         {
+            OpenUnityMcpSettings.CompactToolList = EditorGUILayout.Toggle(
+                new GUIContent("Compact Tool Catalog", "Advertise workflow tools; discover and call other enabled tools on demand. Reconnect your client after changing."),
+                OpenUnityMcpSettings.CompactToolList);
             _toolsFoldout = EditorGUILayout.Foldout(_toolsFoldout, "Tools", true, EditorStyles.foldoutHeader);
             if (!_toolsFoldout)
             {

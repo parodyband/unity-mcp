@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0
+
+- Default to a seven-tool compact catalog with on-demand schema discovery and dispatch; retain the full catalog as a preference and preserve existing callable tool names.
+- Add dependent batches with result references, output projection, bounded execution, and explicit partial-failure reporting. Disabled tools cannot be invoked indirectly.
+- Add paged scene queries by name, component type, root, and scene; return matching component IDs directly.
+- Add exact-path, filtered, and paged serialized-property reads; fix truncation when exactly one property remains.
+- Return structured content alongside compatibility text and annotate read-only tools.
+- Reject missing or null primitive property values instead of silently overwriting existing values with defaults.
+
 ## 0.14.2
 
 - Blocked tools that force an `AssetDatabase` refresh or script compilation while the editor is in play mode (including enter/exit transitions), because refreshing or recompiling during play destabilizes the editor. `unity.refresh_assets`, `unity.request_script_compilation`, `unity.import_asset`, and the asset lifecycle tools (`create_asset`, `create_scriptable_object`, `create_folder`, `copy_asset`, `move_asset`, `delete_asset`) now return an error telling the agent to exit play mode first via `unity.set_play_mode`. `unity.write_asset_text` rejects refreshing writes during play (pass `refresh=false` to defer), and `unity.execute_menu_item` rejects `Assets/Refresh` and `Assets/Reimport All` during play.

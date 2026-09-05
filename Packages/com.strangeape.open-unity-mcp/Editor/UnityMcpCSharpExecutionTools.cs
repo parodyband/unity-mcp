@@ -740,7 +740,7 @@ namespace StrangeApe.OpenUnityMcp
 
         private static Dictionary<string, object> JsonText(Dictionary<string, object> payload, bool isError = false)
         {
-            return McpToolRegistry.ToolText(McpJson.Stringify(payload), isError);
+            return McpToolRegistry.ToolJson(payload, isError);
         }
 
         private readonly struct CompileResult

@@ -84,16 +84,16 @@ namespace StrangeApe.OpenUnityMcp
                 throw new ArgumentException("Missing required prompt argument: task");
             }
 
-            var constraints = McpJson.AsString(arguments, "constraints", "Ask before writes, play mode changes, prefab changes, or build actions.");
+            var constraints = McpJson.AsString(arguments, "constraints", "Respect the user's constraints and existing authorization. Ask before actions outside the authorized scope.");
             var text =
                 "You are working inside a Unity Editor project through Open Unity MCP.\n\n" +
                 "Task:\n" + task + "\n\n" +
                 "Constraints:\n" + constraints + "\n\n" +
-                "Use read-only resources first: unity://project/info, unity://scene/open-scenes, and unity://editor/selection. " +
-                "Prefer targeted tools over broad edits. Before mutating assets, scenes, prefabs, components, play mode, or menu items, explain the intended action and use the narrowest tool available. " +
+                "Use unity.query_scene to find target object and component IDs, then read only needed propertyPaths with unity.get_serialized_properties. Discover other schemas with unity.discover_tools and invoke them through unity.call_tool. " +
+                "Use unity.batch for dependent supported operations and select only needed results. Batches retain prior changes on failure; inspect results and verify state before retrying. " +
                 "Keep generated files under Assets or Packages and preserve Unity .meta files. " +
                 "For unity.execute_csharp, return JSON-safe values for structured inspection; invocation output is available separately as runtimeStdout, runtimeStderr, and bounded logs. " +
-                "When editing scripts or assembly definition files, batch unity.write_asset_text calls and call unity.refresh_assets once when ready to compile. " +
+                "For bulk source edits, use client filesystem tools when available, or call unity.write_asset_text with refresh=false. Call unity.refresh_assets once when ready to compile; source writes are not supported by unity.batch. " +
                 "After unity.request_script_compilation, expect the MCP server to disconnect briefly if Unity reloads assemblies; wait for /health to return before polling unity.get_compilation_status with includeConsole=true.";
 
             return PromptResult("Unity editor task prompt", text);

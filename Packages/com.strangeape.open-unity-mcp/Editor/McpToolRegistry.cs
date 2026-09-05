@@ -39,6 +39,10 @@ namespace StrangeApe.OpenUnityMcp
     {
         private static readonly McpTool[] Tools =
         {
+            UnityMcpWorkflowTools.DiscoverTools,
+            UnityMcpWorkflowTools.CallTool,
+            UnityMcpWorkflowTools.Batch,
+            UnityMcpWorkflowTools.QueryScene,
             UnityMcpComponentTools.AddComponent,
             UnityMcpComponentTools.GetComponents,
             UnityMcpComponentTools.GetSerializedProperties,
@@ -128,18 +132,55 @@ namespace StrangeApe.OpenUnityMcp
             var tools = new List<object>();
             foreach (var tool in Tools)
             {
-                if (!OpenUnityMcpSettings.IsToolEnabled(tool.Name))
+                if (!OpenUnityMcpSettings.IsToolEnabled(tool.Name) ||
+                    (OpenUnityMcpSettings.CompactToolList && !IsCoreTool(tool.Name)))
                 {
                     continue;
                 }
 
-                tools.Add(McpJson.Object(
-                    "name", tool.Name,
-                    "description", tool.Description,
-                    "inputSchema", tool.InputSchema));
+                tools.Add(DescribeTool(tool));
             }
 
             return McpJson.Object("tools", tools);
+        }
+
+        internal static IEnumerable<McpTool> AllTools => Tools;
+
+        internal static bool IsCoreTool(string name)
+        {
+            return name == "unity.discover_tools" || name == "unity.call_tool" || name == "unity.batch" ||
+                   name == "unity.query_scene" || name == "unity.get_serialized_properties" ||
+                   name == "unity.get_compilation_status" || name == "unity.capture_scene_view";
+        }
+
+        // Explicit capabilities: a newly added tool is mutating and non-batchable until reviewed.
+        internal static bool IsReadOnly(string name)
+        {
+            switch (name)
+            {
+                case "unity.discover_tools": case "unity.query_scene":
+                case "unity.get_project_info": case "unity.get_selection": case "unity.list_packages":
+                case "unity.get_compilation_status": case "unity.get_build_settings":
+                case "unity.find_assets": case "unity.get_asset_metadata": case "unity.read_asset_text":
+                case "unity.get_console_logs": case "unity.get_open_scenes": case "unity.get_hierarchy":
+                case "unity.find_child": case "unity.get_prefab_info": case "unity.get_components":
+                case "unity.get_serialized_properties":
+                    return true;
+                default: return false;
+            }
+        }
+
+        internal static bool CanBatch(string name)
+        {
+            return IsReadOnly(name) || name == "unity.create_game_object" || name == "unity.create_game_objects" ||
+                   name == "unity.set_transform" || name == "unity.add_component" || name == "unity.set_serialized_property";
+        }
+
+        internal static Dictionary<string, object> DescribeTool(McpTool tool)
+        {
+            return McpJson.Object("name", tool.Name, "description", tool.Description,
+                "inputSchema", tool.InputSchema, "annotations", McpJson.Object("readOnlyHint", IsReadOnly(tool.Name)),
+                "_meta", McpJson.Object("batchable", CanBatch(tool.Name)));
         }
 
         public static Dictionary<string, object> Call(string name, Dictionary<string, object> arguments)
@@ -227,6 +268,13 @@ namespace StrangeApe.OpenUnityMcp
                     "type", "text",
                     "text", text ?? string.Empty)),
                 "isError", isError);
+        }
+
+        public static Dictionary<string, object> ToolJson(Dictionary<string, object> payload, bool isError = false)
+        {
+            var result = ToolText(McpJson.Stringify(payload), isError);
+            result["structuredContent"] = payload;
+            return result;
         }
 
         public static Dictionary<string, object> ToolContent(List<object> content, bool isError = false)

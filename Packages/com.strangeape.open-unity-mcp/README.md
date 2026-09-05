@@ -40,6 +40,7 @@ Open Unity MCP runs inside the Unity Editor and exposes a local Streamable HTTP 
 - **Stay local:** the server binds to `127.0.0.1` and rejects non-local browser origins.
 - **Use real Unity context:** tools return Unity object IDs, hierarchy state, transforms, prefab data, console logs, and editor status.
 - **Build scenes faster:** create batches of primitives, fix transforms, save prefabs, frame objects, and capture Scene View PNGs for vision-capable agents.
+- **Reduce agent round trips:** start with seven workflow tools, discover other schemas on demand, query matching components, and batch dependent edits with focused readback. See the [agent workflow guide](Documentation~/tools.md#agent-workflow).
 - **Connect common clients:** setup helpers configure Claude Code, Codex, and Claude Desktop.
 
 ## Install

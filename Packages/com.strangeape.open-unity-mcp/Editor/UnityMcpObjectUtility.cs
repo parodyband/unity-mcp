@@ -200,7 +200,7 @@ namespace StrangeApe.OpenUnityMcp
             payload[typeKey] = "entityId";
         }
 
-        public static Type ResolveType(string typeName, Type requiredBaseType)
+        public static Type ResolveType(string typeName, Type requiredBaseType, bool allowAbstract = false)
         {
             if (string.IsNullOrEmpty(typeName))
             {
@@ -208,7 +208,7 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             var direct = Type.GetType(typeName);
-            if (IsValidType(direct, requiredBaseType))
+            if (IsValidType(direct, requiredBaseType, allowAbstract))
             {
                 return direct;
             }
@@ -227,7 +227,7 @@ namespace StrangeApe.OpenUnityMcp
 
                 foreach (var type in types)
                 {
-                    if (!IsValidType(type, requiredBaseType))
+                    if (!IsValidType(type, requiredBaseType, allowAbstract))
                     {
                         continue;
                     }
@@ -283,10 +283,10 @@ namespace StrangeApe.OpenUnityMcp
                    (!transform.gameObject.scene.IsValid() && transform.gameObject.activeSelf);
         }
 
-        private static bool IsValidType(Type type, Type requiredBaseType)
+        private static bool IsValidType(Type type, Type requiredBaseType, bool allowAbstract)
         {
             return type != null &&
-                   !type.IsAbstract &&
+                   (allowAbstract || !type.IsAbstract) &&
                    requiredBaseType.IsAssignableFrom(type);
         }
     }

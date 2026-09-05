@@ -1,7 +1,73 @@
 # Tools
 
-All tools are exposed through `tools/list` and called with `tools/call`.
-Unity objects are identified with `objectId` strings backed by Unity 6 `EntityId` values.
+The default compact catalog exposes seven workflow tools through `tools/list`. Use `unity.discover_tools` to find other enabled tools and retrieve their schemas, then invoke them through `unity.call_tool`. Turn off **Compact Tool Catalog** in Preferences > Open Unity MCP to advertise every enabled tool. Reconnect the client after changing the catalog or tool permissions.
+
+Unity objects are identified with session-scoped `objectId` strings backed by Unity 6 `EntityId` values. Query again after reload or reopening scenes; do not persist these IDs as durable references.
+
+## Agent workflow
+
+The compact catalog contains `unity.discover_tools`, `unity.call_tool`, `unity.batch`, `unity.query_scene`, `unity.get_serialized_properties`, `unity.get_compilation_status`, and `unity.capture_scene_view`.
+
+1. Find scene targets with `unity.query_scene`, filtering by `name`, `componentType`, `scenePath`, or `rootObjectId`. Results contain object IDs and matching component IDs. Use `nextOffset` while `hasMore=true`; restart pagination after changing the hierarchy. Default page size is 25, maximum 200. Inactive objects are included by default.
+2. Read only needed properties with `unity.get_serialized_properties` and `propertyPaths`. Missing paths appear in `missingPaths`. For exploratory reads, use `filter`, `offset`, and `limit`; `nextOffset` is present when `truncated=true`.
+3. Search tool summaries with `unity.discover_tools` and `query`. Pass an exact `name` to retrieve its full schema. The metadata identifies which tools support batching.
+4. Invoke a discovered tool through `unity.call_tool` with `name` and `arguments`, or group dependent operations in `unity.batch`.
+5. Verify the final state with property reads or a Scene View capture. Edit source files with the client's filesystem tools when available, then invoke `unity.refresh_assets` once and inspect compilation diagnostics.
+
+Structured tool payloads are returned as `structuredContent` and as serialized JSON in a compatibility text block, following the [MCP tool result specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#structured-content). Read-only tools include `annotations.readOnlyHint=true`. Dispatch and batch tools are conservatively marked as mutating; client approval rules must cover their nested operations. Disabled tools remain unavailable through discovery, dispatch, and batches.
+
+### Dependent batch example
+
+Call `unity.batch` with these arguments to create a light, configure it, and verify its intensity:
+
+```json
+{
+  "operations": [
+    {
+      "id": "object",
+      "name": "unity.create_game_object",
+      "arguments": { "name": "Key Light", "select": false },
+      "select": ["/created/objectId"]
+    },
+    {
+      "id": "light",
+      "name": "unity.add_component",
+      "arguments": {
+        "objectId": { "$ref": "object/created/objectId" },
+        "componentType": "UnityEngine.Light"
+      },
+      "select": ["/component/objectId"]
+    },
+    {
+      "id": "configure",
+      "name": "unity.set_serialized_property",
+      "arguments": {
+        "objectId": { "$ref": "light/component/objectId" },
+        "propertyPath": "m_Intensity",
+        "value": 3.5
+      },
+      "select": []
+    },
+    {
+      "id": "verify",
+      "name": "unity.get_serialized_properties",
+      "arguments": {
+        "objectId": { "$ref": "light/component/objectId" },
+        "propertyPaths": ["m_Intensity"]
+      },
+      "select": ["/properties/0/value"]
+    }
+  ]
+}
+```
+
+The final step returns `result: {"/properties/0/value": 3.5}`. Each step reports its ID and error state. References address the full structured payload, even when `select` limits the returned output. Pointer segments support `~0` for `~` and `~1` for `/`.
+
+Batches run sequentially in one main-thread turn, with at most 16 operations. They support reviewed read tools plus object creation, transforms, component addition, and serialized-property writes. Reloads, builds, C#, scene lifecycle, recursive dispatch, and asset lifecycle mutations are excluded.
+
+The entire plan's structure, tool availability, and reference ordering are checked before execution. Unity validation and reference-path lookup occur during execution. Batches stop on the first error and retain earlier changes: **they are not transactions**. Inspect per-step results and current state before retrying. A failed mutation can have partial effects; transport interruption can also leave its outcome unknown.
+
+A ten-second budget is checked between operations; it cannot interrupt a Unity API call already running. Returned payloads have a 262,144-character budget before the outer MCP envelope. Oversized output is marked `outputOmitted` and remaining steps stop; the operation has already run. A projection error is reported separately from execution success. Use `select` to reduce output without repeating mutations.
 
 ## Project And Editor
 

@@ -7,7 +7,7 @@ Open Unity MCP is intentionally small:
 - GET on `/mcp` returns 405 because this package does not stream server-sent events yet.
 - Unity API work is marshalled to the editor main thread.
 - Tools are registered in one deterministic registry.
-- The package has no runtime assembly and no external process.
+- The package has no runtime assembly. An optional bundled Node stdio sidecar keeps the client connection alive across editor domain reloads.
 - Result sizes are bounded for hierarchy, logs, search, HTTP body, and text reads.
 - File tools only operate on paths that resolve under `Assets` or `Packages`.
 - Asset lifecycle tools refuse to modify the protected `Assets` and `Packages` root folders.
@@ -27,7 +27,17 @@ Open Unity MCP is intentionally small:
 - `tools/list`
 - `tools/call`
 
-The server does not implement resource subscriptions, list-changed notifications, or prompt/resource pagination yet. Lists are intentionally small and deterministic.
+The in-editor server does not implement resource subscriptions, list-changed notifications, or prompt/resource pagination. The sidecar emits tool-list change notifications after recovery. Reconnect clients after changing tool preferences.
+
+## Workflow interface
+
+The registry owns tool availability, explicit read-only annotations, and the batch allowlist. Unknown capabilities default to mutating and non-batchable. The compact catalog advertises seven tools; discovery exposes summaries or one schema, and dispatch preserves every underlying tool's availability, play-mode, and threading checks.
+
+`UnityMcpWorkflowTools` combines scene queries and dependent execution. Batches execute in one main-thread turn, resolve references to prior structured results, and return bounded per-step output. They stop on failure without rollback. They never replay mutations, and they do not promise durable execution receipts across domain reloads.
+
+The result module returns structured dictionaries plus compatibility text. This gives batches access to native values and lets clients inspect results without parsing text. Scene queries and serialized-property pagination reduce irrelevant output; exact property paths avoid traversal when the target fields are known.
+
+Caller-thread tools, including the general dispatcher, retain the existing split between background work and Unity main-thread work. Batching excludes operations that compile, build, reload, or execute arbitrary code. The sidecar treats batch and dispatch calls as potentially mutating and never retries them after an uncertain mid-flight failure.
 
 ## Security Posture
 

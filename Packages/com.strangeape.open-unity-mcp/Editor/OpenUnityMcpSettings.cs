@@ -8,6 +8,13 @@ namespace StrangeApe.OpenUnityMcp
         public const int DefaultPort = 8080;
 
         private const string AutoStartKey = "StrangeApe.OpenUnityMcp.AutoStart";
+        private const string CompactToolListKey = "StrangeApe.OpenUnityMcp.CompactToolList";
+
+        public static bool CompactToolList
+        {
+            get => EditorPrefs.GetBool(CompactToolListKey, true);
+            set => EditorPrefs.SetBool(CompactToolListKey, value);
+        }
         private const string PortKey = "StrangeApe.OpenUnityMcp.Port";
         private const string DisabledToolKeyPrefix = "StrangeApe.OpenUnityMcp.ToolDisabled.";
         private const string RequireAccessTokenKey = "StrangeApe.OpenUnityMcp.RequireAccessToken";

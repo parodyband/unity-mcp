@@ -36,7 +36,11 @@ namespace StrangeApe.OpenUnityMcp
                 "objectId", McpToolRegistry.StringProperty("Target objectId from another tool result."),
                 "path", McpToolRegistry.StringProperty("Optional target asset path."),
                 "limit", McpToolRegistry.IntegerProperty("Maximum properties to return.", 1, 500),
-                "includeChildren", McpToolRegistry.BooleanProperty("Include child properties.")),
+                "includeChildren", McpToolRegistry.BooleanProperty("Include child properties."),
+                "offset", McpToolRegistry.IntegerProperty("Matching properties to skip; default 0.", 0, 1000000),
+                "filter", McpToolRegistry.StringProperty("Case-insensitive property path substring."),
+                "propertyPaths", McpJson.Object("type", "array", "minItems", 1, "maxItems", 100,
+                    "items", McpJson.Object("type", "string"), "description", "Read exact paths directly, bypassing pagination. Missing paths are explicitly listed.")),
             GetSerializedPropertiesImpl);
 
         public static readonly McpTool SetSerializedProperty = new McpTool(
@@ -102,36 +106,50 @@ namespace StrangeApe.OpenUnityMcp
             }
 
             var limit = Math.Max(1, Math.Min(500, McpJson.AsInt(args, "limit", 100)));
+            var offset = Math.Max(0, Math.Min(1000000, McpJson.AsInt(args, "offset", 0)));
+            var filter = McpJson.AsString(args, "filter", string.Empty);
             var includeChildren = McpJson.AsBool(args, "includeChildren", true);
-            var serializedObject = new SerializedObject(target);
-            var iterator = serializedObject.GetIterator();
-            var enterChildren = true;
             var properties = new List<object>();
-
-            while (iterator.NextVisible(enterChildren) && properties.Count < limit)
-            {
-                properties.Add(DescribeProperty(iterator));
-                enterChildren = includeChildren;
-            }
-
+            var missing = new List<object>();
             var truncated = false;
-            if (properties.Count >= limit)
+            using (var serializedObject = new SerializedObject(target))
             {
-                try
+                if (args.TryGetValue("propertyPaths", out var rawPaths))
                 {
-                    truncated = iterator.NextVisible(false);
+                    if (!(rawPaths is List<object> paths) || paths.Count < 1 || paths.Count > 100)
+                        throw new ArgumentException("propertyPaths must contain 1 to 100 paths.");
+                    foreach (var rawPath in paths)
+                    {
+                        if (!(rawPath is string path) || string.IsNullOrEmpty(path)) throw new ArgumentException("Property paths must be non-empty strings.");
+                        using (var property = serializedObject.FindProperty(path))
+                        {
+                            if (property == null) missing.Add(path);
+                            else properties.Add(DescribeProperty(property));
+                        }
+                    }
                 }
-                catch
+                else
                 {
-                    truncated = false;
+                    using (var iterator = serializedObject.GetIterator())
+                    {
+                        var enterChildren = true;
+                        var skipped = 0;
+                        while (iterator.NextVisible(enterChildren))
+                        {
+                            enterChildren = includeChildren;
+                            if (iterator.propertyPath.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                            if (skipped++ < offset) continue;
+                            if (properties.Count == limit) { truncated = true; break; }
+                            properties.Add(DescribeProperty(iterator));
+                        }
+                    }
                 }
             }
-
             return JsonText(McpJson.Object(
                 "target", UnityMcpEditorTools.DescribeObject(target),
-                "count", properties.Count,
-                "truncated", truncated,
-                "properties", properties));
+                "count", properties.Count, "truncated", truncated,
+                "nextOffset", truncated ? (object)(offset + properties.Count) : null,
+                "missingPaths", missing, "properties", properties));
         }
 
         private static Dictionary<string, object> SetSerializedPropertyImpl(Dictionary<string, object> args)
@@ -257,6 +275,11 @@ namespace StrangeApe.OpenUnityMcp
         {
             error = null;
             args.TryGetValue("value", out var value);
+            if (property.propertyType != SerializedPropertyType.ObjectReference && value == null)
+            {
+                error = "A non-null value is required for this property type.";
+                return false;
+            }
 
             try
             {
@@ -515,7 +538,7 @@ namespace StrangeApe.OpenUnityMcp
 
         private static Dictionary<string, object> JsonText(Dictionary<string, object> payload)
         {
-            return McpToolRegistry.ToolText(McpJson.Stringify(payload));
+            return McpToolRegistry.ToolJson(payload);
         }
     }
 }

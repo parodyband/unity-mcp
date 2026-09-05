@@ -128,7 +128,7 @@ namespace StrangeApe.OpenUnityMcp
 
         private static Dictionary<string, object> JsonText(Dictionary<string, object> payload)
         {
-            return McpToolRegistry.ToolText(McpJson.Stringify(payload));
+            return McpToolRegistry.ToolJson(payload);
         }
     }
 }

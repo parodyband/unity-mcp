@@ -50,7 +50,14 @@ namespace StrangeApe.OpenUnityMcp.Tests
         [Test]
         public void ToolsListContainsCoreUnityToolGroups()
         {
-            var response = McpProtocol.Handle("{\"jsonrpc\":\"2.0\",\"id\":\"tools\",\"method\":\"tools/list\"}");
+            var compact = OpenUnityMcpSettings.CompactToolList;
+            McpProtocolResponse response;
+            try
+            {
+                OpenUnityMcpSettings.CompactToolList = false;
+                response = McpProtocol.Handle("{\"jsonrpc\":\"2.0\",\"id\":\"tools\",\"method\":\"tools/list\"}");
+            }
+            finally { OpenUnityMcpSettings.CompactToolList = compact; }
 
             StringAssert.Contains("\"unity.get_project_info\"", response.Body);
             StringAssert.Contains("\"unity.get_asset_metadata\"", response.Body);
