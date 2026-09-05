@@ -13,6 +13,18 @@ permissions:
   pull-requests: write
 
 jobs:
+  sidecar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Test persistent sessions and transport
+        run: node --test Packages/com.strangeape.open-unity-mcp/Server~/test/session.mjs Packages/com.strangeape.open-unity-mcp/Server~/test/session-transport.mjs
+      - name: Test reload fault recovery
+        run: node Packages/com.strangeape.open-unity-mcp/Server~/test/sidecar-fault-injection.mjs
+
   editmode:
     runs-on: ubuntu-latest
     steps:

@@ -9,6 +9,7 @@ namespace StrangeApe.OpenUnityMcp
 {
     internal static class UnityMcpWorkflowTools
     {
+        internal static readonly string EditorEpoch = Guid.NewGuid().ToString("N");
         public static readonly McpTool DiscoverTools = new McpTool(
             "unity.discover_tools",
             "Find enabled tools by name/description. Returns summaries by default; pass name for one complete input schema. Call discovered tools through unity.call_tool or batchable tools through unity.batch.",
@@ -264,7 +265,7 @@ namespace StrangeApe.OpenUnityMcp
                     "scenePath", go.scene.path, "hierarchyPath", UnityMcpSceneTools.GetHierarchyPath(transform),
                     "activeSelf", go.activeSelf, "components", matches));
             }
-            return McpToolRegistry.ToolJson(McpJson.Object("objects", results, "count", results.Count,
+            return McpToolRegistry.ToolJson(McpJson.Object("editorEpoch", EditorEpoch, "objects", results, "count", results.Count,
                 "hasMore", hasMore, "nextOffset", hasMore ? (object)(offset + results.Count) : null));
         }
     }

@@ -41,6 +41,7 @@ Open Unity MCP runs inside the Unity Editor and exposes a local Streamable HTTP 
 - **Use real Unity context:** tools return Unity object IDs, hierarchy state, transforms, prefab data, console logs, and editor status.
 - **Build scenes faster:** create batches of primitives, fix transforms, save prefabs, frame objects, and capture Scene View PNGs for vision-capable agents.
 - **Reduce agent round trips:** start with seven workflow tools, discover other schemas on demand, query matching components, and batch dependent edits with focused readback. See the [agent workflow guide](Documentation~/tools.md#agent-workflow).
+- **Keep a working session:** the stdio sidecar adds JavaScript cells with persistent state and a Unity SDK. Setup installs a companion skill for Codex or Claude Code; bulk edits return verified values in one editor request. See [persistent sessions](Documentation~/tools.md#persistent-sessions-stdio-sidecar).
 - **Connect common clients:** setup helpers configure Claude Code, Codex, and Claude Desktop.
 
 ## Install

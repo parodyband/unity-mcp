@@ -100,7 +100,7 @@ namespace StrangeApe.OpenUnityMcp
                 "serverInfo", McpJson.Object(
                     "name", "open-unity-mcp",
                     "title", "Open Unity MCP",
-                    "version", "0.15.0",
+                    "version", "0.16.0",
                     "description", "A small in-editor MCP server for Unity."),
                 "instructions", "Start with unity.query_scene for object/component IDs and unity.get_serialized_properties with propertyPaths for focused reads. Discover additional tool schemas with unity.discover_tools (name), then invoke via unity.call_tool. Use unity.batch for dependent operations and select only needed output. Batches are not atomic; verify completed steps before retrying failures. Object IDs are session-scoped; query again after reload. Use filesystem tools for bulk source edits, then call unity.refresh_assets once and inspect compilation status. Most file writes are limited to Assets and Packages. The unity.execute_csharp fallback runs unrestricted editor C# and should be approval-gated.");
         }

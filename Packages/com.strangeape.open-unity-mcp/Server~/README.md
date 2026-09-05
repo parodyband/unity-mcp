@@ -116,3 +116,18 @@ follow-up call rides it out with no transport error surfaced:
 ```text
 node test/sidecar-e2e.mjs [--port <n>] [--project <path>]
 ```
+
+## Persistent Unity SDK sessions
+
+The sidecar now adds `unity.run_code`, `unity.session_status`, and `unity.reset_session` to the forwarded editor catalog. Use the bundled [skill and SDK reference](../Skills~/open-unity-mcp/SKILL.md) for the API. Add `--no-code` to retain transport-only behavior.
+
+Session variables live in the worker's explicit `state` object. Reset/timeout loses those variables but does not cancel Unity mutations already dispatched. The sidecar waits for those requests to drain before accepting more edits. Trusted code executes in a worker with a VM context for API organization; Node's VM is [not a security mechanism](https://nodejs.org/api/vm.html).
+
+Run the hermetic session and transport tests with:
+
+```sh
+node --test test/session.mjs test/session-transport.mjs
+node test/sidecar-fault-injection.mjs
+```
+
+The Unity EditMode suite includes an optional live Node integration test. It creates five lights and verifies a bulk SDK edit through the actual stdio/HTTP/editor path. The test skips when Node is absent. Test results report editor-request count and elapsed time, not model latency.

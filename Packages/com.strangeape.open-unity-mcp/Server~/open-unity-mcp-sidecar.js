@@ -16,6 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { UnitySession, SESSION_TOOLS, INSTRUCTIONS, toolResult } = require('./unity-session');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -27,12 +28,15 @@ function parseArgs(argv) {
     project: process.cwd(),
     // How long to wait for the editor to come back before giving up on a
     // request. Covers compile + domain reload of a large project.
-    timeoutMs: 90000
+    timeoutMs: 90000,
+    codeEnabled: true
   };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--port' && i + 1 < argv.length) {
+    if (arg === '--no-code') {
+      config.codeEnabled = false;
+    } else if (arg === '--port' && i + 1 < argv.length) {
       const value = parseInt(argv[++i], 10);
       if (Number.isFinite(value) && value > 0) {
         config.port = value;
@@ -101,9 +105,8 @@ function writeMessage(obj) {
 // Failure classification
 // ---------------------------------------------------------------------------
 
-// A "connect-level" failure means the request bytes never reached the server:
-// the connection was refused, reset before the request was written, or the
-// connect attempt timed out. Any request is safe to retry in this case.
+// Only explicit connection failures such as ECONNREFUSED prove non-delivery.
+// All other transport errors are uncertain, including timeouts before headers.
 //
 // Node surfaces these differently depending on where in the lifecycle they land.
 // fetch() wraps the underlying error, so inspect both the wrapper and its cause.
@@ -118,37 +121,6 @@ function isConnectLevelError(err) {
       codes.has('EHOSTUNREACH') ||
       codes.has('ENETUNREACH') ||
       codes.has('EADDRNOTAVAIL')) {
-    return true;
-  }
-
-  // Our own connect-phase abort (see forwardOnce): connection was never made.
-  if (err.__oumConnectTimeout === true) {
-    return true;
-  }
-
-  return false;
-}
-
-// A "mid-flight" failure means the request may have been transmitted (and the
-// tool may have executed) but the response was lost — socket reset/EOF after
-// send, or the read timed out. These must NOT be blind-retried for mutations.
-function isMidFlightError(err) {
-  if (!err) {
-    return false;
-  }
-
-  const codes = collectErrorCodes(err);
-  if (codes.has('ECONNRESET') ||
-      codes.has('EPIPE') ||
-      codes.has('UND_ERR_SOCKET') ||
-      codes.has('UND_ERR_HEADERS_TIMEOUT') ||
-      codes.has('UND_ERR_BODY_TIMEOUT')) {
-    return true;
-  }
-
-  // fetch throws a generic TypeError('fetch failed') once the request is in
-  // flight and the peer disappears; treat the read-phase abort the same way.
-  if (err.__oumReadTimeout === true) {
     return true;
   }
 
@@ -288,16 +260,8 @@ async function waitForServer(deadline) {
 // decide whether a retry is safe.
 async function forwardOnce(rawBody) {
   const controller = new AbortController();
-  let connected = false;
-
-  // Distinguish a connect-phase stall from a read-phase stall so classification
-  // is accurate even when the platform does not raise a specific errno.
-  const connectTimer = setTimeout(() => {
-    if (!connected) {
-      controller.__oumConnectTimeout = true;
-      controller.abort();
-    }
-  }, CONNECT_TIMEOUT_MS);
+  // Only explicit connection failures prove non-delivery. A header/read timeout
+  // may occur after Unity has already started or completed the mutation.
   const attemptTimer = setTimeout(() => {
     controller.__oumReadTimeout = true;
     controller.abort();
@@ -320,35 +284,18 @@ async function forwardOnce(rawBody) {
       signal: controller.signal
     });
 
-    // Headers arrived => we are past connect and the request reached the server.
-    connected = true;
-    clearTimeout(connectTimer);
-
     const text = await response.text();
     return { ok: true, status: response.status, body: text };
   } catch (err) {
     // Tag the error with which timer fired so classification can use it.
-    if (controller.__oumConnectTimeout) {
-      err.__oumConnectTimeout = true;
-    }
     if (controller.__oumReadTimeout) {
       err.__oumReadTimeout = true;
     }
 
-    let phase = 'unknown';
-    if (isConnectLevelError(err)) {
-      phase = 'connect';
-    } else if (isMidFlightError(err)) {
-      phase = 'midflight';
-    } else if (!connected) {
-      // Never got headers back and it is not a recognized mid-flight errno:
-      // safest to treat as connect-level (bytes almost certainly not consumed).
-      phase = 'connect';
-    }
+    const phase = isConnectLevelError(err) ? 'connect' : 'midflight';
 
     return { ok: false, phase: phase, error: err };
   } finally {
-    clearTimeout(connectTimer);
     clearTimeout(attemptTimer);
   }
 }
@@ -363,11 +310,11 @@ async function forwardOnce(rawBody) {
 function reloadInterruptedResult(id, toolName) {
   const tool = toolName ? ('`' + toolName + '`') : 'the tool';
   const text =
-    'Unity performed a script/domain reload while ' + tool + ' was in flight, so the ' +
-    'connection dropped before a response came back. The operation MAY OR MAY NOT have ' +
+    'The connection was interrupted while ' + tool + ' was in flight (for example during a domain reload). ' +
+    'The operation MAY OR MAY NOT have ' +
     'applied — the sidecar did not resend it, because re-running a mutation across a ' +
     'reload can duplicate its effects.\n\n' +
-    'The Unity editor is healthy again now. Verify the current state before retrying: ' +
+    'Wait for editor availability and verify the current state before retrying: ' +
     'call unity.get_compilation_status, and/or re-read the asset or inspect the object ' +
     'you were changing. If the change did not take effect, issue the call again.';
 
@@ -406,7 +353,6 @@ function editorGoneError(id) {
 // Request handling
 // ---------------------------------------------------------------------------
 
-let recoveredAtLeastOnce = false;
 
 function extractToolName(message) {
   try {
@@ -444,7 +390,6 @@ function patchInitializeCapabilities(parsedBody) {
 // Emit a readiness signal after the editor comes back so clients refresh their
 // tool list immediately instead of timing out on their next call.
 function announceRecovery() {
-  recoveredAtLeastOnce = true;
   // The editor may have rebound with a freshly regenerated token; re-read it so
   // subsequent forwards carry the current secret.
   refreshToken();
@@ -452,7 +397,7 @@ function announceRecovery() {
 }
 
 // Handles a single parsed JSON-RPC message from the client.
-async function handleMessage(message) {
+async function handleEditorMessage(message, reply = writeMessage) {
   const hasId = Object.prototype.hasOwnProperty.call(message, 'id') && message.id !== null && message.id !== undefined;
   const rawBody = JSON.stringify(message);
   const method = typeof message.method === 'string' ? message.method : '';
@@ -478,7 +423,7 @@ async function handleMessage(message) {
   }
 
   if (result.ok) {
-    respond(message, hasId, method, result.body, false);
+    respond(message, hasId, method, result.body, false, reply);
     return;
   }
 
@@ -491,7 +436,7 @@ async function handleMessage(message) {
   if (!recovered) {
     // Editor is genuinely gone.
     if (hasId) {
-      writeMessage(editorGoneError(message.id));
+      reply(editorGoneError(message.id));
     }
     log('editor did not recover within deadline; reported gone.');
     return;
@@ -504,7 +449,7 @@ async function handleMessage(message) {
     // The tool may already have run. Do not resend; return a structured success
     // that tells the model to verify and retry if needed.
     if (hasId) {
-      writeMessage(reloadInterruptedResult(message.id, extractToolName(message)));
+      reply(reloadInterruptedResult(message.id, extractToolName(message)));
     }
     log('tools/call was interrupted mid-flight; returned verify-and-retry result.');
     return;
@@ -516,7 +461,7 @@ async function handleMessage(message) {
     // A non-idempotent, non-tools/call method interrupted mid-flight (rare —
     // notifications carry no id). Be conservative and do not resend.
     if (hasId) {
-      writeMessage(reloadInterruptedResult(message.id, null));
+      reply(reloadInterruptedResult(message.id, null));
     }
     log('non-idempotent method interrupted mid-flight; returned verify-and-retry result.');
     return;
@@ -524,8 +469,13 @@ async function handleMessage(message) {
 
   const retry = await forwardOnce(rawBody);
   if (retry.ok) {
-    respond(message, hasId, method, retry.body, true);
+    respond(message, hasId, method, retry.body, true, reply);
     log('resent request after recovery; responded normally.');
+    return;
+  }
+
+  if (method === 'tools/call' && retry.phase !== 'connect') {
+    if (hasId) reply(reloadInterruptedResult(message.id, extractToolName(message)));
     return;
   }
 
@@ -535,20 +485,20 @@ async function handleMessage(message) {
   if (recoveredAgain) {
     const lastTry = await forwardOnce(rawBody);
     if (lastTry.ok) {
-      respond(message, hasId, method, lastTry.body, true);
+      respond(message, hasId, method, lastTry.body, true, reply);
       return;
     }
   }
 
   if (hasId) {
-    writeMessage(editorGoneError(message.id));
+    reply(editorGoneError(message.id));
   }
   log('request still failing after recovery; reported gone.');
 }
 
 // Writes the editor's HTTP response body back to stdout for id-bearing requests.
 // Notifications (no id) produce a 202 with an empty body and are dropped.
-function respond(message, hasId, method, body, afterRecovery) {
+function respond(message, hasId, method, body, afterRecovery, reply = writeMessage) {
   if (!hasId) {
     // Notification: the Unity server answered 202 with no JSON-RPC body. Nothing
     // to forward to the client.
@@ -559,7 +509,7 @@ function respond(message, hasId, method, body, afterRecovery) {
     // Defensive: an id-bearing request should always get a JSON body. If the
     // server returned empty, synthesize a minimal error rather than emitting a
     // blank line that would desync the client's parser.
-    writeMessage({
+    reply({
       jsonrpc: '2.0',
       id: message.id,
       error: { code: -32603, message: 'Empty response from Unity MCP server.' }
@@ -574,7 +524,8 @@ function respond(message, hasId, method, body, afterRecovery) {
     try {
       const parsed = JSON.parse(body);
       patchInitializeCapabilities(parsed);
-      writeMessage(parsed);
+      if (CONFIG.codeEnabled && parsed.result) parsed.result.instructions = INSTRUCTIONS + " " + (parsed.result.instructions || "");
+      reply(parsed);
       return;
     } catch (err) {
       // Not parseable as expected; fall through to raw passthrough.
@@ -582,7 +533,11 @@ function respond(message, hasId, method, body, afterRecovery) {
   }
 
   // Forward the server's response verbatim as one NDJSON line.
-  process.stdout.write(body.endsWith('\n') ? body : body + '\n');
+  const parsed = JSON.parse(body);
+  if (method === 'tools/list' && CONFIG.codeEnabled && Array.isArray(parsed.result?.tools)) {
+    parsed.result.tools.push(...SESSION_TOOLS);
+  }
+  reply(parsed);
 }
 
 function describeError(err) {
@@ -592,6 +547,29 @@ function describeError(err) {
   const codes = Array.from(collectErrorCodes(err));
   const codePart = codes.length > 0 ? ' [' + codes.join(',') + ']' : '';
   return (err.message || String(err)) + codePart;
+}
+
+const session = new UnitySession(async (name, args) => {
+  let response;
+  await handleEditorMessage({ jsonrpc: '2.0', id: 'sdk', method: 'tools/call', params: { name, arguments: args } }, value => { response = value; });
+  if (!response || response.error) throw new Error(response?.error?.message || 'Missing Unity response; outcome unknown.');
+  return response.result;
+}, { receiptPath: path.join(CONFIG.project, 'Temp', 'OpenUnityMcp', 'sessions', require('node:crypto').randomUUID() + '.json') });
+
+async function handleMessage(message) {
+  const name = message.method === 'tools/call' ? message.params?.name : null;
+  if (CONFIG.codeEnabled && SESSION_TOOLS.some(t => t.name === name)) {
+    if (message.id === undefined) return;
+    const result = name === 'unity.run_code' ? await session.run(message.params.arguments)
+      : name === 'unity.reset_session' ? session.reset() : toolResult(session.status());
+    writeMessage({ jsonrpc: '2.0', id: message.id, result });
+    return;
+  }
+  if (session.inFlight && message.method === 'tools/call') {
+    writeMessage({ jsonrpc: '2.0', id: message.id, result: toolResult({ error: 'A stopped code cell still has Unity operations draining. Inspect unity.session_status before issuing more tools.' }, true) });
+    return;
+  }
+  return handleEditorMessage(message);
 }
 
 // ---------------------------------------------------------------------------
@@ -605,7 +583,14 @@ function describeError(err) {
 let chain = Promise.resolve();
 
 function enqueue(message) {
-  chain = chain.then(() => handleMessage(message)).catch((err) => {
+  const generation = session.generation;
+  chain = chain.then(() => {
+    if (message.method === 'tools/call' && message.params?.name === 'unity.run_code' && generation !== session.generation) {
+      if (message.id !== undefined) writeMessage({ jsonrpc: '2.0', id: message.id, result: toolResult({ error: 'Queued code cell cancelled by session reset.' }, true) });
+      return;
+    }
+    return handleMessage(message);
+  }).catch((err) => {
     log('unhandled error while handling message: ' + describeError(err));
     const hasId = message && Object.prototype.hasOwnProperty.call(message, 'id') &&
       message.id !== null && message.id !== undefined;
@@ -655,7 +640,10 @@ function main() {
       return;
     }
 
-    enqueue(message);
+    if (CONFIG.codeEnabled && message.method === 'tools/call' &&
+        ['unity.session_status', 'unity.reset_session'].includes(message.params?.name)) {
+      handleMessage(message).catch(error => log(error.message));
+    } else enqueue(message);
   });
 
   rl.on('close', () => {

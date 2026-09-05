@@ -4,6 +4,16 @@ The default compact catalog exposes seven workflow tools through `tools/list`. U
 
 Unity objects are identified with session-scoped `objectId` strings backed by Unity 6 `EntityId` values. Query again after reload or reopening scenes; do not persist these IDs as durable references.
 
+## Persistent sessions (stdio sidecar)
+
+The sidecar adds `unity.run_code`, `unity.session_status`, and `unity.reset_session` to the editor's catalog. Code cells keep reusable values on `state`, invoke the Unity SDK with `await`, and explicitly `emit` results. See the bundled [SDK reference](../Skills~/open-unity-mcp/references/sdk.md) for examples and limits.
+
+`unity.edit_objects` accepts an `editorEpoch` from `query_scene`, 1–100 target IDs, and a `set` dictionary of 1–16 serialized property paths. It validates targets and values before applying, groups Undo records, and returns final values in the same main-thread turn. It only edits loaded scene objects/components. Reloaded epochs and disabled setters are rejected. Apply-time failures can retain partial changes. The SDK's `unity.edit` resolves matching component IDs from a query result and calls this tool once.
+
+Session code runs as trusted local code in a terminable worker; it is not a security sandbox. `--no-code` disables session tools. A reset or timeout clears JavaScript variables but cannot cancel Unity work already dispatched. Status remains callable during execution and reports in-flight requests, timings, and bounded receipt metadata. The session rejects more edits while a stopped cell's requests drain.
+
+`unity.compilation.wait` performs bounded status polling inside the sidecar, avoiding repeated agent turns. Stable idle is not proof of successful compilation; inspect the returned diagnostics. Session state survives Unity reload but not sidecar restart. Query results carry an epoch so bulk edits can reject stale targets.
+
 ## Agent workflow
 
 The compact catalog contains `unity.discover_tools`, `unity.call_tool`, `unity.batch`, `unity.query_scene`, `unity.get_serialized_properties`, `unity.get_compilation_status`, and `unity.capture_scene_view`.

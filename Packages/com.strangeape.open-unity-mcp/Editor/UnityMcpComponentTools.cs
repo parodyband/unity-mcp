@@ -271,7 +271,7 @@ namespace StrangeApe.OpenUnityMcp
                 "saved", true));
         }
 
-        private static bool TrySetProperty(SerializedProperty property, Dictionary<string, object> args, out string error)
+        internal static bool TrySetProperty(SerializedProperty property, Dictionary<string, object> args, out string error)
         {
             error = null;
             args.TryGetValue("value", out var value);
@@ -384,7 +384,7 @@ namespace StrangeApe.OpenUnityMcp
             return true;
         }
 
-        private static Dictionary<string, object> DescribeProperty(SerializedProperty property)
+        internal static Dictionary<string, object> DescribeProperty(SerializedProperty property)
         {
             return McpJson.Object(
                 "path", property.propertyPath,

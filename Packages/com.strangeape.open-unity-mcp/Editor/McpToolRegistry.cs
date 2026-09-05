@@ -43,6 +43,7 @@ namespace StrangeApe.OpenUnityMcp
             UnityMcpWorkflowTools.CallTool,
             UnityMcpWorkflowTools.Batch,
             UnityMcpWorkflowTools.QueryScene,
+            UnityMcpBulkEditTools.Edit,
             UnityMcpComponentTools.AddComponent,
             UnityMcpComponentTools.GetComponents,
             UnityMcpComponentTools.GetSerializedProperties,
@@ -192,9 +193,16 @@ namespace StrangeApe.OpenUnityMcp
                     continue;
                 }
 
-                return tool.RunOnCallerThread
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                var result = tool.RunOnCallerThread
                     ? CallOnCallerThread(tool, arguments)
                     : UnityMainThread.Invoke(() => CallOnMainThread(tool, arguments), tool.TimeoutSeconds);
+                var metadata = result.TryGetValue("_meta", out var rawMeta) ? rawMeta as Dictionary<string, object> : null;
+                if (metadata == null) result["_meta"] = metadata = McpJson.Object();
+                var timing = metadata.TryGetValue("com.strangeape.open-unity-mcp/timing", out var rawTiming) ? rawTiming as Dictionary<string, object> : null;
+                if (timing == null) metadata["com.strangeape.open-unity-mcp/timing"] = timing = McpJson.Object();
+                timing["dispatchMs"] = clock.Elapsed.TotalMilliseconds;
+                return result;
             }
 
             throw new InvalidOperationException("Unknown tool: " + name);
@@ -251,14 +259,20 @@ namespace StrangeApe.OpenUnityMcp
 
         private static Dictionary<string, object> ExecuteGuarded(McpTool tool, Dictionary<string, object> arguments)
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Dictionary<string, object> result;
             try
             {
-                return tool.Execute(arguments);
+                result = tool.Execute(arguments);
             }
             catch (Exception ex)
             {
-                return ToolText("Tool failed: " + ex.Message, true);
+                result = ToolText("Tool failed: " + ex.Message, true);
             }
+            var metadata = result.TryGetValue("_meta", out var rawMeta) ? rawMeta as Dictionary<string, object> : null;
+            if (metadata == null) result["_meta"] = metadata = McpJson.Object();
+            metadata["com.strangeape.open-unity-mcp/timing"] = McpJson.Object("executeMs", clock.Elapsed.TotalMilliseconds);
+            return result;
         }
 
         public static Dictionary<string, object> ToolText(string text, bool isError = false)

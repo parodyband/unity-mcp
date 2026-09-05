@@ -22,7 +22,7 @@ namespace StrangeApe.OpenUnityMcp
         {
             InstallWithDialog(
                 "Claude Code",
-                () => InstallClaudeCodeProjectConfig(ProjectRoot, ResolveLaunch()),
+                () => InstallSkillAlongsideConfig(InstallClaudeCodeProjectConfig(ProjectRoot, ResolveLaunch()), "claude-code"),
                 "Restart Claude Code, or run /mcp in an active session to check the connection.\n\nThe sidecar rides out Unity domain reloads so the connection survives recompiles." +
                 HttpFallbackTokenNote());
         }
@@ -50,8 +50,8 @@ namespace StrangeApe.OpenUnityMcp
         {
             InstallWithDialog(
                 "Codex",
-                () => InstallCodexConfig(CodexConfigPath, ResolveLaunch()),
-                "Restart Codex, then run codex mcp list to check the connection.");
+                () => InstallSkillAlongsideConfig(InstallCodexConfig(CodexConfigPath, ResolveLaunch()), "codex"),
+                "Restart Codex, then run codex mcp list to check the connection. The Unity workflow skill is installed in this project's .agents/skills folder.");
         }
 
         [MenuItem("Tools/Open Unity MCP/Setup/Claude Desktop Bridge", false, 62)]
@@ -78,14 +78,14 @@ namespace StrangeApe.OpenUnityMcp
 
             DrawClientBlock(
                 "Claude Code",
-                "stdio sidecar - .mcp.json in project root (survives reloads)",
+                "stdio session + project skill in .claude/skills",
                 new[] { ProjectRelativeClaudeCodeConfigPath },
                 "Setup Claude Code",
                 InstallClaudeCodeProjectConfigMenu);
 
             DrawClientBlock(
                 "Codex",
-                "stdio sidecar - user config.toml (survives reloads)",
+                "stdio session + project skill in .agents/skills",
                 new[] { CodexConfigPath },
                 "Setup Codex",
                 InstallCodexConfigMenu);
@@ -312,6 +312,20 @@ namespace StrangeApe.OpenUnityMcp
 
             builder.Append(']');
             return builder.ToString();
+        }
+
+        private static string InstallSkillAlongsideConfig(string configPath, string client)
+        {
+            try
+            {
+                var packageRoot = Path.GetDirectoryName(Path.GetDirectoryName(SidecarScriptPath));
+                var source = Path.Combine(packageRoot, "Skills~", "open-unity-mcp");
+                return configPath + "\nSkill: " + OpenUnityMcpSkillSetup.Install(ProjectRoot, client, source);
+            }
+            catch (Exception ex)
+            {
+                return configPath + "\nConfig installed. Skill was not updated: " + ex.Message;
+            }
         }
 
         internal static string ProjectRoot => Path.GetFullPath(Path.Combine(Application.dataPath, ".."));

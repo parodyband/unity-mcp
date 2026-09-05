@@ -107,3 +107,17 @@ Restart Claude Desktop after editing config. Keep Unity open with the MCP server
 ## Security
 
 Only connect local clients you trust. The server can read and write project files under `Assets` and `Packages`, mutate scenes, open/save/close scene assets, execute editor menu items, request script compilation, and build players when a client calls those tools. Scene lifecycle tools protect dirty scenes by default, and player build output is restricted to `Builds/`.
+
+## Companion workflow skill
+
+The Unity setup buttons now install the connection and a project-local workflow skill from the package's `Skills~/open-unity-mcp` folder:
+
+- **Codex:** `.agents/skills/open-unity-mcp/`, following [Codex's repository skill discovery](https://developers.openai.com/codex/skills/).
+- **Claude Code:** `.claude/skills/open-unity-mcp/`, following [Claude Code's project skill discovery](https://code.claude.com/docs/en/skills).
+- **Claude Desktop/custom clients:** essential SDK guidance is supplied through MCP initialization and tool descriptions. The installer does not assume these clients load local filesystem skills.
+
+Rerun the setup button after updating the package to refresh the managed skill. Customized files are preserved: setup reports the conflict and leaves all skill files unchanged rather than partially updating them. Existing MCP config setup behavior is retained. The config may be installed successfully even if a customized skill cannot be updated; the result dialog reports both outcomes. Restart/reconnect the client to load the updated tools and skill discovery paths.
+
+The same skill and reference files are bundled for both supported coding agents. They are installed in the current Unity project, not globally, so unrelated projects do not inherit Unity-specific guidance. For custom clients, the skill can be copied manually if that client supports Agent Skills.
+
+The stdio sidecar now offers persistent JavaScript sessions. Direct HTTP remains supported but does not offer session execution. Add `--no-code` to the sidecar's argument list to omit the session tools. Session execution must be authorized as trusted local code, and wrapper approval rules must cover nested operations. Server-side disabled-tool checks remain enforced by SDK calls.

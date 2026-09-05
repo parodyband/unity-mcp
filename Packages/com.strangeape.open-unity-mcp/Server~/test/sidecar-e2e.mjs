@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -164,7 +165,12 @@ async function liveStatus(port) {
   await waitHealthy(port, 90000);
   const body = JSON.stringify({ jsonrpc: '2.0', id: 999, method: 'tools/call', params: { name: 'unity.get_compilation_status', arguments: { includeConsole: false } } });
   try {
-    const r = await fetch('http://127.0.0.1:' + port + '/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+      const status = JSON.parse(fs.readFileSync(path.join(CFG.project, 'Temp', 'OpenUnityMcp', 'server-status.json'), 'utf8'));
+      if (status.token) headers.Authorization = 'Bearer ' + status.token;
+    } catch {}
+    const r = await fetch('http://127.0.0.1:' + port + '/mcp', { method: 'POST', headers, body });
     const j = await r.json();
     return toolTextFromRaw(j);
   } catch (e) {
@@ -219,7 +225,8 @@ async function main() {
   }
 
   const client = new SidecarClient(CFG.port, CFG.project);
-  const dummyAsset = 'Assets/OpenUnityMcpSidecarE2E_Dummy.cs';
+  const unique = process.pid + '_' + Date.now();
+  const dummyAsset = 'Assets/OpenUnityMcpSidecarE2E_' + unique + '.cs';
   let dummyCreated = false;
 
   try {
@@ -245,6 +252,12 @@ async function main() {
     record('tools/call get_project_info (healthy)', isResult(info.message) && !info.message.result?.isError, info.ms,
       'text ' + toolText(info.message).length + ' chars');
 
+    const saved = await client.request('tools/call', { name: 'unity.run_code', arguments: {
+      code: 'state.marker=42; state.epoch=(await unity.scene.query({limit:1})).editorEpoch; emit(state.epoch);'
+    } });
+    assert(isResult(saved.message) && !saved.message.result.isError, 'persistent session initialized');
+    const sessionId = saved.message.result.structuredContent.sessionId;
+
     // --- Phase 2: request across a real domain reload ---------------------
     console.log('');
     console.log('Phase 2 - request during a domain reload');
@@ -253,7 +266,7 @@ async function main() {
     // and drive a domain reload. write_asset_text of a .cs is itself a
     // reload-triggering op, so this doubles as the trigger.
     const stamp = Date.now();
-    const dummy = 'namespace OpenUnityMcpSidecarE2E { internal static class Dummy { public const long Stamp = ' + stamp + 'L; } }\n';
+    const dummy = 'namespace OpenUnityMcpSidecarE2E { internal static class Dummy_' + unique + ' { public const long Stamp = ' + stamp + 'L; } }\n';
     const write = await client.request('tools/call', {
       name: 'unity.write_asset_text',
       arguments: { path: dummyAsset, text: dummy, createDirectories: true, refresh: true }
@@ -297,6 +310,7 @@ async function main() {
       // have a live post-reload status back, so the burst brackets the outage.
       const live = liveSequenceFrom(s.message);
       if (live !== null && live > seqBefore) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
 
     const seqAfter = compilationSequence(await liveStatus(CFG.port));
@@ -316,6 +330,13 @@ async function main() {
     assert(isResult(after.message) && !isError(after.message), 'post-recovery status is a live result');
     record('tools/call get_compilation_status (recovered)', isResult(after.message), after.ms,
       'notifications seen=' + client.notifications.filter((n) => n.method === 'notifications/tools/list_changed').length);
+    const restored = await client.request('tools/call', { name: 'unity.run_code', arguments: {
+      code: 'emit({marker:state.marker,epochChanged:state.epoch!==(await unity.scene.query({limit:1})).editorEpoch});'
+    } });
+    const restoredPayload = restored.message.result?.structuredContent;
+    const stateSurvived = restoredPayload?.sessionId === sessionId && restoredPayload?.output?.[0]?.marker === 42 && restoredPayload?.output?.[0]?.epochChanged === true;
+    assert(stateSurvived, 'same session retained variables while Unity epoch changed');
+    record('persistent state survives real reload', stateSurvived, restored.ms, 'marker=42, Unity epoch changed, session ID unchanged');
   } finally {
     // Clean up the dummy asset regardless of outcome.
     if (dummyCreated) {
