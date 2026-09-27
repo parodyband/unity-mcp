@@ -27,25 +27,45 @@ jobs:
 
   editmode:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        unity: ['6000.0.44f1', '6000.1.11f1', '6000.2.13f1', '6000.3.2f1', '6000.4.0f1', '6000.5.4f1']
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create isolated package test project
+        run: node .github/scripts/create-unity-test-project.mjs Logs/UnityTests ${{ matrix.unity }}
 
       - name: Cache Unity Library
         uses: actions/cache@v4
         with:
-          path: Library
-          key: Library-${{ runner.os }}-${{ hashFiles('Packages/manifest.json', 'Packages/packages-lock.json', 'ProjectSettings/ProjectVersion.txt') }}
+          path: Logs/UnityTests/Library
+          key: Library-${{ runner.os }}-${{ matrix.unity }}-${{ hashFiles('.github/scripts/create-unity-test-project.mjs', 'Packages/com.strangeape.open-unity-mcp/package.json') }}
           restore-keys: |
-            Library-${{ runner.os }}-
+            Library-${{ runner.os }}-${{ matrix.unity }}-
 
       - name: Run EditMode tests
+        id: tests
         uses: game-ci/unity-test-runner@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
-          projectPath: .
+          projectPath: Logs/UnityTests
+          unityVersion: ${{ matrix.unity }}
           testMode: editmode
-          artifactsPath: test-results
+          artifactsPath: test-results/${{ matrix.unity }}
           githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity ${{ matrix.unity }} EditMode tests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-editmode-${{ matrix.unity }}
+          path: ${{ steps.tests.outputs.artifactsPath }}

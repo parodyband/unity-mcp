@@ -13,7 +13,7 @@ Open Unity MCP is intentionally small:
 - Asset lifecycle tools refuse to modify the protected `Assets` and `Packages` root folders.
 - Player build output is restricted to the ignored project `Builds/` folder.
 - Scene replacement and close tools refuse to discard dirty scene changes unless a caller explicitly saves or discards them.
-- Unity object identity uses Unity 6 `EntityId` values exposed as JSON-safe `objectId` strings.
+- Unity object identity is exposed as JSON-safe `objectId` strings. `UnityMcpObjectUtility` selects signed instance IDs on Unity 6.0–6.3 and 64-bit `EntityId` values on 6.4+. Version guards keep newer APIs out of older editor builds; `objectIdType` identifies the representation.
 
 ## Supported MCP Methods
 

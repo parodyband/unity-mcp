@@ -173,6 +173,7 @@ namespace StrangeApe.OpenUnityMcp
 
         public static UnityEngine.Object ResolveObjectById(string objectId)
         {
+#if UNITY_6000_4_OR_NEWER
             if (!ulong.TryParse(objectId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rawEntityId))
             {
                 return null;
@@ -180,6 +181,20 @@ namespace StrangeApe.OpenUnityMcp
 
             var entityId = EntityId.FromULong(rawEntityId);
             return EditorUtility.EntityIdToObject(entityId);
+#else
+            // Earlier Unity 6 releases use signed, 32-bit instance IDs (including negative IDs).
+            if (!int.TryParse(objectId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var instanceId))
+            {
+                return null;
+            }
+
+#if UNITY_6000_3_OR_NEWER
+            // Unity 6.3 provides an EntityId resolver, but still uses 32-bit IDs.
+            return EditorUtility.EntityIdToObject((EntityId)instanceId);
+#else
+            return EditorUtility.InstanceIDToObject(instanceId);
+#endif
+#endif
         }
 
         public static string GetObjectId(UnityEngine.Object obj)
@@ -189,7 +204,11 @@ namespace StrangeApe.OpenUnityMcp
                 return string.Empty;
             }
 
+#if UNITY_6000_4_OR_NEWER
             return EntityId.ToULong(obj.GetEntityId()).ToString(CultureInfo.InvariantCulture);
+#else
+            return obj.GetInstanceID().ToString(CultureInfo.InvariantCulture);
+#endif
         }
 
         public static void AddObjectId(Dictionary<string, object> payload, UnityEngine.Object obj, string prefix = null)
@@ -197,7 +216,11 @@ namespace StrangeApe.OpenUnityMcp
             var idKey = string.IsNullOrEmpty(prefix) ? "objectId" : prefix + "Id";
             var typeKey = string.IsNullOrEmpty(prefix) ? "objectIdType" : prefix + "IdType";
             payload[idKey] = GetObjectId(obj);
+#if UNITY_6000_4_OR_NEWER
             payload[typeKey] = "entityId";
+#else
+            payload[typeKey] = "instanceId";
+#endif
         }
 
         public static Type ResolveType(string typeName, Type requiredBaseType, bool allowAbstract = false)

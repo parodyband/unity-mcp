@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Restore the Unity 6.0 minimum declared by the package: use signed instance IDs on Unity 6.0–6.3 and retain 64-bit Entity IDs on 6.4+.
+- Report the active ID representation in `objectIdType` and prefixed ID type fields while keeping IDs as strings.
+- Add object identity regression tests and an isolated package test project with a Unity 6.0–6.5 CI matrix, independent of the sample project's Unity 6.4 dependencies.
+
 ## 0.16.0
 
 - Add persistent JavaScript sessions to the stdio sidecar with a Unity SDK, explicit output, image forwarding, status/reset tools, worker deadlines, bounded operation receipts, and request timing.

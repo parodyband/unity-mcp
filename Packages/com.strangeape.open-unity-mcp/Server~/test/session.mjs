@@ -20,12 +20,12 @@ test('persistent state, explicit output, structured SDK results and timings', as
   });
 });
 
-test('bulk edit is exactly one bridge call and retains epoch', async () => {
+test('bulk edit retains epoch and signed or 64-bit ID strings in one bridge call', async () => {
   const calls = [];
   await usingSession(async (name, args) => { calls.push({ name, args }); return toolResult({ complete: true }); }, async session => {
-    const result = await session.run({ code: 'emit(await unity.edit({targets:{editorEpoch:"epoch",objects:[{components:[{objectId:"7"},{objectId:"8"}]}]},set:{m_Intensity:2.5}}));' });
+    const result = await session.run({ code: 'emit(await unity.edit({targets:{editorEpoch:"epoch",objects:[{components:[{objectId:"-12345"},{objectId:"18446744073709551615"}]}]},set:{m_Intensity:2.5}}));' });
     assert.equal(result.isError, false);
-    assert.deepEqual(calls, [{ name: 'unity.edit_objects', args: { editorEpoch: 'epoch', targets: ['7', '8'], set: { m_Intensity: 2.5 }, label: undefined } }]);
+    assert.deepEqual(calls, [{ name: 'unity.edit_objects', args: { editorEpoch: 'epoch', targets: ['-12345', '18446744073709551615'], set: { m_Intensity: 2.5 }, label: undefined } }]);
   });
 });
 

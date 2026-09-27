@@ -2,7 +2,7 @@
 
 The default compact catalog exposes seven workflow tools through `tools/list`. Use `unity.discover_tools` to find other enabled tools and retrieve their schemas, then invoke them through `unity.call_tool`. Turn off **Compact Tool Catalog** in Preferences > Open Unity MCP to advertise every enabled tool. Reconnect the client after changing the catalog or tool permissions.
 
-Unity objects are identified with session-scoped `objectId` strings backed by Unity 6 `EntityId` values. Query again after reload or reopening scenes; do not persist these IDs as durable references.
+Unity objects are identified with session-scoped `objectId` strings. Unity 6.0–6.3 uses signed instance IDs (`objectIdType: "instanceId"`); Unity 6.4+ uses 64-bit Entity IDs (`objectIdType: "entityId"`). Prefixed ID fields report the same type through `<prefix>IdType`. Pass IDs back unchanged as strings, including a leading minus sign when present. Query again after reload or reopening scenes; do not persist these IDs as durable references or transfer them between editor sessions or Unity versions.
 
 ## Persistent sessions (stdio sidecar)
 

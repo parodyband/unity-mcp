@@ -46,6 +46,8 @@ Open Unity MCP runs inside the Unity Editor and exposes a local Streamable HTTP 
 
 ## Install
 
+The package targets Unity **6.0 (6000.0) and newer**. The repository's sample project uses **6000.4.8f1**; install the package into your existing project to use another version. See [compatibility and test coverage](Documentation~/compatibility.md).
+
 Open your Unity 6+ project, then install the package:
 
 1. Open **Window > Package Manager**.

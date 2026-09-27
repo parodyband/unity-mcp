@@ -34,7 +34,12 @@ namespace StrangeApe.OpenUnityMcp.Tests
                 }
             }
 
-            foreach (var gameObject in Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None))
+#if UNITY_6000_4_OR_NEWER
+            var gameObjects = Object.FindObjectsByType<GameObject>();
+#else
+            var gameObjects = Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+#endif
+            foreach (var gameObject in gameObjects)
             {
                 if (gameObject == null)
                 {
