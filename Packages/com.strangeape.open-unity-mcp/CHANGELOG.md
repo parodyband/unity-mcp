@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.16.1
 
 - Restore the Unity 6.0 minimum declared by the package: use signed instance IDs on Unity 6.0–6.3 and retain 64-bit Entity IDs on 6.4+.
 - Report the active ID representation in `objectIdType` and prefixed ID type fields while keeping IDs as strings.

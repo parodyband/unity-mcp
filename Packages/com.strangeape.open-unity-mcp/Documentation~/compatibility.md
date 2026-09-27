@@ -34,7 +34,7 @@ Every run completed with zero failures or skipped tests. Older versions run four
 
 The EditMode CI matrix is configured for **6000.0.44f1, 6000.1.11f1, 6000.2.13f1, 6000.3.2f1, 6000.4.0f1, and 6000.5.4f1**. Each job creates a minimal project that loads the package from this checkout. This keeps the sample project's dependencies out of compatibility checks and compiles both object-ID implementations against their actual Unity APIs.
 
-The suite covers object-ID JSON round trips, signed IDs, invariant formatting, invalid and overflowing IDs, destroyed objects, scene/component edits, prefabs, batches, and protocol behavior. This coverage does not certify every Unity patch or future release. The new Linux CI matrix has not yet run on GitHub.
+The suite covers object-ID JSON round trips, signed IDs, invariant formatting, invalid and overflowing IDs, destroyed objects, scene/component edits, prefabs, batches, and protocol behavior. This coverage does not certify every Unity patch or future release. See the [GitHub Actions runs](https://github.com/parodyband/unity-mcp/actions/workflows/unity-editmode.yml) for Linux CI results.
 
 ## Run a compatibility test locally
 
