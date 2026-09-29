@@ -1,13 +1,13 @@
 {
   "mcpServers": {
     "open-unity-mcp": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "mcp-remote@latest",
-        "--http",
-        "http://127.0.0.1:8080/mcp",
-        "--allow-http"
+        "<home>/.open-unity-mcp/sidecar/open-unity-mcp-sidecar.js",
+        "--port",
+        "8080",
+        "--project",
+        "<unity-project-root>"
       ]
     }
   }

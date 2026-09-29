@@ -97,6 +97,8 @@ Use **Preferences > Open Unity MCP > Client Setup** to configure supported clien
 
 Setup helpers configure a small Node stdio sidecar (`Server~/open-unity-mcp-sidecar.js`, Node 18+, zero dependencies) as the endpoint your client connects to. The sidecar forwards to the in-editor HTTP server and rides out domain reloads, so the MCP session survives recompiles instead of dropping with a connection error. This is the recommended transport for all clients.
 
+Configs launch a stable copy in `~/.open-unity-mcp/sidecar/`, which the editor refreshes on every load. Package updates therefore never break client configs, and entries written by older versions are repaired automatically. The sidecar also connects before Unity is open and picks up the tools when the editor starts.
+
 Clients that speak Streamable HTTP directly can still connect to `http://127.0.0.1:8080/mcp`, but that connection drops on every recompile.
 
 ```toml

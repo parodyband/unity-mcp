@@ -30,7 +30,10 @@ async function fixture(work, options = []) {
     });
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const child = spawn(process.execPath, [script, '--port', String(server.address().port), '--project', project, ...options], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [script, '--port', String(server.address().port), '--project', project, ...options], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, OPEN_UNITY_MCP_STATE_DIR: path.join(project, 'state') }
+  });
   child.stderr.resume();
   const pending = new Map();
   const rl = createInterface({ input: child.stdout });

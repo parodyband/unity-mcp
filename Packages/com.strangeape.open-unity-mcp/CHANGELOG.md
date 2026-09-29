@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.17.0
+
+- Launch the sidecar from a stable per-user copy (`~/.open-unity-mcp/sidecar/`) that the editor refreshes on every load. Client configs no longer reference `Library/PackageCache/...@<hash>`, whose hash changes on every package update and left Claude Desktop and Claude Code failing with `Cannot find module` ("Server disconnected").
+- Repair existing `open-unity-mcp` sidecar entries on editor load. Entries in Claude Desktop (including the Microsoft Store config), the project's `.mcp.json`, and Codex that point into `PackageCache` or at a missing script, or name a missing `--project`, are repointed at the stable copy and logged. HTTP entries, custom script paths, and unparseable files are left untouched.
+- Answer `initialize` and the catalog list methods from the last catalog the editor returned when Unity is not listening, and emit `list_changed` once it is. A client started before Unity, or during a reload, no longer fails its handshake and drops the server for the session.
+- Report the project path from `/health`; the sidecar follows the project that owns the port for its status file, token, and receipts. A `stopped` status written before the editor last answered is ignored, so a shared config naming another project no longer reports "editor appears to be closed" on every reload.
+- Answer `ping` in the sidecar, stop forwarding client notifications (a forwarded `notifications/initialized` could hold the queue for the full timeout while Unity was down), and honor `notifications/cancelled`: a queued request is skipped, and an in-flight request has its response suppressed.
+- Send `notifications/progress` heartbeats for requests that carry a progress token, return the client's id on editor rejections that used `id: null`, log uncaught errors instead of exiting, and timestamp sidecar logs.
+- Fix the libuv `UV_HANDLE_CLOSING` assertion the sidecar printed on Windows when the client closed stdin.
+- Add client setup troubleshooting and update the Claude Desktop example, which still showed the removed `mcp-remote` bridge.
+
 ## 0.16.1
 
 - Restore the Unity 6.0 minimum declared by the package: use signed instance IDs on Unity 6.0–6.3 and retain 64-bit Entity IDs on 6.4+.

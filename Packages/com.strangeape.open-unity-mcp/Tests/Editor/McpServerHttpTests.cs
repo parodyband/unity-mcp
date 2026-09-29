@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -62,9 +63,37 @@ namespace StrangeApe.OpenUnityMcp.Tests
             StringAssert.Contains("\"isError\":false", dispatchTask.Result);
         }
 
+        [UnityTest]
+        public IEnumerator HealthReportsProjectPathForSidecars()
+        {
+            var port = FindFreePort();
+            OpenUnityMcpServer.Start(port);
+
+            var healthTask = Task.Run(() => Get(port, "/health"));
+            yield return WaitForTask(healthTask);
+
+            var health = McpJson.Parse(healthTask.Result) as Dictionary<string, object>;
+            Assert.NotNull(health);
+            Assert.AreEqual(true, health["ok"]);
+            Assert.AreEqual(UnityMcpPathUtility.ProjectRoot.Replace('\\', '/'), health["projectPath"]);
+        }
+
         private static Task<string> PostAsync(int port, string body)
         {
             return Task.Run(() => Post(port, body));
+        }
+
+        private static string Get(int port, string path)
+        {
+            var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + path);
+            request.Method = "GET";
+            using (var response = (HttpWebResponse)request.GetResponse())
+            using (var stream = response.GetResponseStream())
+            using (var reader = new StreamReader(stream))
+            {
+                Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+                return reader.ReadToEnd();
+            }
         }
 
         private static IEnumerator WaitForTask(Task task)

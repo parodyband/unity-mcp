@@ -30,7 +30,7 @@ node open-unity-mcp-sidecar.js [--port <n>] [--project <path>] [--timeout <ms>]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--port <n>` | `8080` (or `OPEN_UNITY_MCP_PORT`) | Port of the in-editor HTTP server. Forwards to `http://127.0.0.1:<port>/mcp`. |
-| `--project <path>` | current working directory | Unity project root. Used to locate the status file at `<project>/Temp/OpenUnityMcp/server-status.json`. |
+| `--project <path>` | current working directory | Unity project root. Used to locate the status file at `<project>/Temp/OpenUnityMcp/server-status.json` until `/health` reports the project that owns the port. |
 | `--timeout <ms>` | `90000` | How long to wait for the editor to return after a reload before declaring it gone. |
 
 The environment variable `OPEN_UNITY_MCP_PORT` is honored when `--port` is omitted.
@@ -77,12 +77,45 @@ The Unity package writes `<project>/Temp/OpenUnityMcp/server-status.json` with a
 hold" from "gone". The status file is only a hint: a successful `/health` response is
 the sole proof of life, and `stopped` is the only trusted "give up" signal.
 
+## Staying connected
+
+- **Client starts before Unity.** `initialize`, `tools/list`, `prompts/list`, and
+  `resources/list` never wait out an outage. When the editor is not listening, they
+  are answered from the last catalog the editor returned (cached in
+  `~/.open-unity-mcp/cache/catalog-<port>.json`), or from built-in defaults on the
+  very first run. The sidecar then polls `/health` and emits `list_changed` once the
+  editor is reachable. Without this, a client whose 30s handshake timeout expires
+  drops the server for the whole session. These read-only methods also bypass the
+  serialized queue, so a list refresh never waits behind a long tool call.
+- **Project following.** `--project` is only the starting point. `/health` reports
+  the project that owns the port, and the sidecar switches to that project's status
+  file, token, and receipts. A `stopped` status written before the editor last
+  answered is treated as stale, so a shared config pointing at a closed project does
+  not turn every reload into "editor appears to be closed".
+- **Local protocol handling.** `ping` is answered by the sidecar immediately. Client
+  notifications are never forwarded, because the editor ignores them and a forward
+  while Unity is down would hold the queue for the full timeout.
+  `notifications/cancelled` drops a queued request before it reaches Unity. For a
+  request already in flight, it only suppresses the response.
+- **Progress heartbeat.** A request carrying `_meta.progressToken` gets a
+  `notifications/progress` every 10s until it completes. This keeps clients that
+  reset their timeout on progress waiting through a long reload.
+- **Crash resistance.** Uncaught errors are logged instead of ending the process.
+  Every stderr line is timestamped, and clients copy stderr into their MCP log.
+
+Set `OPEN_UNITY_MCP_STATE_DIR` to move the catalog cache away from
+`~/.open-unity-mcp`; the hermetic tests do this.
+
 ## Manual client config
 
 The Unity menu (`Tools > Open Unity MCP > Setup`, or the buttons in
 `Preferences > Open Unity MCP`) writes these for you with absolute paths. To wire a
-client by hand, use the sidecar as an stdio command. Replace `<abs>` with the absolute
-path to this script and `<project>` with your Unity project root.
+client by hand, use the sidecar as an stdio command. Point at the **stable copy** the
+editor maintains in `~/.open-unity-mcp/sidecar/` (Windows:
+`%USERPROFILE%\.open-unity-mcp\sidecar\`), not at this folder. For git and registry
+packages this folder is `Library/PackageCache/...@<hash>`, which moves on every
+package update. Replace `<home>` with your home directory and `<project>` with your
+Unity project root.
 
 Claude Code — `.mcp.json` in the project root:
 
@@ -91,7 +124,7 @@ Claude Code — `.mcp.json` in the project root:
   "mcpServers": {
     "open-unity-mcp": {
       "command": "node",
-      "args": ["<abs>/Server~/open-unity-mcp-sidecar.js", "--port", "8080", "--project", "<project>"]
+      "args": ["<home>/.open-unity-mcp/sidecar/open-unity-mcp-sidecar.js", "--port", "8080", "--project", "<project>"]
     }
   }
 }
@@ -102,7 +135,7 @@ Codex — `~/.codex/config.toml`:
 ```toml
 [mcp_servers.open-unity-mcp]
 command = "node"
-args = ["<abs>/Server~/open-unity-mcp-sidecar.js", "--port", "8080", "--project", "<project>"]
+args = ["<home>/.open-unity-mcp/sidecar/open-unity-mcp-sidecar.js", "--port", "8080", "--project", "<project>"]
 ```
 
 Claude Desktop — `claude_desktop_config.json` (same shape as Claude Code above).

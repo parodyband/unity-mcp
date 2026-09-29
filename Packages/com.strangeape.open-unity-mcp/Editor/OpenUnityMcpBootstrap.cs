@@ -1,5 +1,6 @@
 using System;
 using UnityEditor;
+using UnityEngine;
 
 namespace StrangeApe.OpenUnityMcp
 {
@@ -32,6 +33,17 @@ namespace StrangeApe.OpenUnityMcp
                 // lands before the first update tick.
                 EditorApplication.update += StartPendingServer;
             }
+
+            if (!Application.isBatchMode)
+            {
+                EditorApplication.update += InstallSidecar;
+            }
+        }
+
+        private static void InstallSidecar()
+        {
+            EditorApplication.update -= InstallSidecar;
+            OpenUnityMcpSidecarInstaller.InstallAndRepairClients();
         }
 
         private static void StartPendingServer()

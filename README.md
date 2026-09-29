@@ -75,9 +75,11 @@ Open **Preferences > Open Unity MCP** and use the **Client Setup** buttons:
 
 | Client | Config updated | Transport |
 | --- | --- | --- |
-| Claude Code | `.mcp.json` in the Unity project root | Direct Streamable HTTP |
-| Codex | `~/.codex/config.toml` | Direct Streamable HTTP |
-| Claude Desktop | `claude_desktop_config.json` | Local `mcp-remote` stdio bridge |
+| Claude Code | `.mcp.json` in the Unity project root | stdio sidecar (survives reloads) |
+| Codex | `~/.codex/config.toml` | stdio sidecar (survives reloads) |
+| Claude Desktop | `claude_desktop_config.json` | stdio sidecar (survives reloads) |
+
+The sidecar runs from a stable copy in `~/.open-unity-mcp/sidecar/` that the editor refreshes on load, so package updates never break client configs.
 
 Manual Streamable HTTP config:
 

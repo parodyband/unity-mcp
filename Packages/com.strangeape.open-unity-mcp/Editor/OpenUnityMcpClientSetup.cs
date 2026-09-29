@@ -14,7 +14,6 @@ namespace StrangeApe.OpenUnityMcp
         private const string ServerName = "open-unity-mcp";
         private const string HttpFallbackServerName = "open-unity-mcp-http";
         private const string CodexSectionName = "mcp_servers." + ServerName;
-        private const string SidecarRelativePath = "Server~/open-unity-mcp-sidecar.js";
         private const string NewLine = "\r\n";
 
         [MenuItem("Tools/Open Unity MCP/Setup/Claude Code Project", false, 60)]
@@ -59,7 +58,7 @@ namespace StrangeApe.OpenUnityMcp
         {
             if (!EditorUtility.DisplayDialog(
                     "Setup Claude Desktop",
-                    "Claude Desktop starts local MCP servers as processes. This will add the Open Unity MCP sidecar (node " + SidecarRelativePath + "), which forwards to the in-editor server and survives domain reloads.\n\nNode.js 18+ must be installed to run the sidecar.",
+                    "Claude Desktop starts local MCP servers as processes. This will add the Open Unity MCP sidecar (node " + OpenUnityMcpSidecarInstaller.InstalledScriptPath.Replace('\\', '/') + "), which forwards to the in-editor server and survives domain reloads. The sidecar is kept at that fixed path so package updates never break the config.\n\nNode.js 18+ must be installed to run the sidecar.",
                     "Update Config",
                     "Cancel"))
             {
@@ -138,7 +137,7 @@ namespace StrangeApe.OpenUnityMcp
                 }
                 else
                 {
-                    EditorGUILayout.LabelField("Sidecar path unavailable (package not resolved).", EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField("Sidecar not installed yet (" + OpenUnityMcpSidecarInstaller.InstallDirectory + ").", EditorStyles.miniLabel);
                 }
 
                 DrawCopyableRow("HTTP URL", OpenUnityMcpSettings.Endpoint);
@@ -195,9 +194,10 @@ namespace StrangeApe.OpenUnityMcp
             }
         }
 
-        // Absolute path to the bundled sidecar script, resolved from the package's
-        // on-disk location so it works whether the package lives in Packages/ or the
-        // global PackageCache. Returns null if the package cannot be resolved.
+        // Absolute path to the sidecar script inside the resolved package. Client
+        // configs must not reference it: for git and registry packages it lives under
+        // Library/PackageCache/...@<hash> and moves on every update. Configs use the
+        // stable copy from OpenUnityMcpSidecarInstaller instead.
         internal static string SidecarScriptPath
         {
             get
@@ -214,27 +214,28 @@ namespace StrangeApe.OpenUnityMcp
 
         private static SidecarLaunch ResolveLaunch()
         {
-            var scriptPath = SidecarScriptPath;
+            var scriptPath = OpenUnityMcpSidecarInstaller.EnsureInstalled();
             if (string.IsNullOrEmpty(scriptPath))
             {
                 throw new InvalidOperationException(
-                    "Could not locate the sidecar script (Server~/open-unity-mcp-sidecar.js) in the resolved package. " +
-                    "Reimport the package or use the HTTP URL directly.");
+                    "Could not install the sidecar script (Server~/open-unity-mcp-sidecar.js) to " +
+                    OpenUnityMcpSidecarInstaller.InstallDirectory + ". Reimport the package or use the HTTP URL directly.");
             }
 
             return SidecarLaunch.Create(scriptPath, OpenUnityMcpSettings.Port, ProjectRoot);
         }
 
+        // Called from OnGUI on every repaint, so it only describes the stable copy the
+        // bootstrap already installed rather than refreshing it.
         private static SidecarLaunch? TryResolveLaunch()
         {
-            try
-            {
-                return ResolveLaunch();
-            }
-            catch
+            var scriptPath = OpenUnityMcpSidecarInstaller.InstalledScriptPath;
+            if (!File.Exists(scriptPath))
             {
                 return null;
             }
+
+            return SidecarLaunch.Create(scriptPath, OpenUnityMcpSettings.Port, ProjectRoot);
         }
 
         // Describes how a client should launch the sidecar over stdio. Built once
@@ -427,6 +428,206 @@ namespace StrangeApe.OpenUnityMcp
             lines.Add("args = " + FormatTomlStringArray(launch.Args));
 
             return JoinLines(lines);
+        }
+
+        // Repoints existing open-unity-mcp sidecar entries at the stable script when they
+        // reference a package-resolved copy (Library/PackageCache/...@<hash>, which moves
+        // on every package update) or a script that no longer exists. Runs on editor load
+        // so configs written by older package versions heal themselves. Entries using the
+        // HTTP url, another command, or an existing script outside PackageCache are left
+        // alone, and a file that does not parse is never rewritten.
+        internal static List<string> RepairSidecarConfigs(string stableScriptPath, string projectRoot)
+        {
+            var repaired = new List<string>();
+            foreach (var desktopConfigPath in ClaudeDesktopConfigPaths)
+            {
+                TryRepair(repaired, desktopConfigPath, () => RepairJsonSidecarConfig(desktopConfigPath, stableScriptPath, projectRoot, false));
+            }
+
+            var projectConfigPath = Path.Combine(projectRoot, ".mcp.json");
+            TryRepair(repaired, projectConfigPath, () => RepairJsonSidecarConfig(projectConfigPath, stableScriptPath, projectRoot, true));
+
+            var codexConfigPath = CodexConfigPath;
+            TryRepair(repaired, codexConfigPath, () => RepairCodexSidecarConfig(codexConfigPath, stableScriptPath, projectRoot));
+            return repaired;
+        }
+
+        private static void TryRepair(List<string> repaired, string configPath, Func<bool> repair)
+        {
+            try
+            {
+                if (repair())
+                {
+                    repaired.Add(configPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Open Unity MCP] Could not repair " + configPath + ": " + ex.Message);
+            }
+        }
+
+        // ownsProject is true for the project's own .mcp.json, whose --project must be
+        // this project. Shared configs (Claude Desktop, Codex) only get --project
+        // replaced when it names a directory that no longer exists.
+        internal static bool RepairJsonSidecarConfig(string configPath, string stableScriptPath, string projectRoot, bool ownsProject)
+        {
+            if (!File.Exists(configPath))
+            {
+                return false;
+            }
+
+            Dictionary<string, object> root;
+            try
+            {
+                root = ReadJsonConfig(configPath);
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+
+            if (!root.TryGetValue("mcpServers", out var serversValue) || !(serversValue is Dictionary<string, object> servers) ||
+                !servers.TryGetValue(ServerName, out var entryValue) || !(entryValue is Dictionary<string, object> entry) ||
+                !entry.TryGetValue("args", out var argsValue) || !(argsValue is List<object> args) ||
+                !RepairSidecarArgs(args, stableScriptPath, projectRoot, ownsProject))
+            {
+                return false;
+            }
+
+            WriteTextIfChanged(configPath, SerializePrettyJson(root));
+            return true;
+        }
+
+        // Rewrites only the args line of the [mcp_servers.open-unity-mcp] section so tool
+        // approval subsections and the file's line endings are preserved.
+        internal static bool RepairCodexSidecarConfig(string configPath, string stableScriptPath, string projectRoot)
+        {
+            if (!File.Exists(configPath))
+            {
+                return false;
+            }
+
+            var text = File.ReadAllText(configPath);
+            var lines = SplitContentLines(text);
+            var inSection = false;
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var section = GetTomlSectionName(lines[i]);
+                if (section != null)
+                {
+                    inSection = string.Equals(section, CodexSectionName, StringComparison.Ordinal);
+                    continue;
+                }
+
+                var trimmed = lines[i].Trim();
+                var equals = trimmed.IndexOf('=');
+                if (!inSection || equals < 0 || !string.Equals(trimmed.Substring(0, equals).Trim(), "args", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                List<object> args;
+                try
+                {
+                    args = McpJson.Parse(trimmed.Substring(equals + 1).Trim()) as List<object>;
+                }
+                catch (FormatException)
+                {
+                    // TOML literal strings and multi-line arrays are not JSON; leave them alone.
+                    return false;
+                }
+
+                if (args == null || !RepairSidecarArgs(args, stableScriptPath, projectRoot, false))
+                {
+                    return false;
+                }
+
+                var values = new string[args.Count];
+                for (var j = 0; j < args.Count; j++)
+                {
+                    values[j] = Convert.ToString(args[j], CultureInfo.InvariantCulture);
+                }
+
+                lines[i] = "args = " + FormatTomlStringArray(values);
+                var newLine = text.IndexOf("\r\n", StringComparison.Ordinal) >= 0 ? "\r\n" : "\n";
+                WriteTextIfChanged(configPath, string.Join(newLine, lines.ToArray()) + newLine);
+                return true;
+            }
+
+            return false;
+        }
+
+        // Mutates args in place and returns true when anything changed.
+        internal static bool RepairSidecarArgs(IList<object> args, string stableScriptPath, string projectRoot, bool ownsProject)
+        {
+            var scriptIndex = -1;
+            for (var i = 0; i < args.Count; i++)
+            {
+                if (args[i] is string candidate &&
+                    candidate.Replace('\\', '/').EndsWith("/" + OpenUnityMcpSidecarInstaller.ScriptFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    scriptIndex = i;
+                    break;
+                }
+            }
+
+            if (scriptIndex < 0)
+            {
+                return false;
+            }
+
+            var changed = false;
+            var stable = stableScriptPath.Replace('\\', '/');
+            var current = (string)args[scriptIndex];
+            if (!PathsEqual(current, stable) &&
+                (current.Replace('\\', '/').IndexOf("/Library/PackageCache/", StringComparison.OrdinalIgnoreCase) >= 0 || !File.Exists(current)))
+            {
+                args[scriptIndex] = stable;
+                changed = true;
+            }
+
+            var normalizedRoot = projectRoot.Replace('\\', '/');
+            for (var i = scriptIndex + 1; i + 1 < args.Count; i++)
+            {
+                if (!string.Equals(args[i] as string, "--project", StringComparison.Ordinal) || !(args[i + 1] is string configuredProject))
+                {
+                    continue;
+                }
+
+                if (ownsProject ? !PathsEqual(configuredProject, normalizedRoot) : !Directory.Exists(configuredProject))
+                {
+                    args[i + 1] = normalizedRoot;
+                    changed = true;
+                }
+
+                break;
+            }
+
+            return changed;
+        }
+
+        private static bool PathsEqual(string left, string right)
+        {
+            try
+            {
+                left = Path.GetFullPath(left);
+                right = Path.GetFullPath(right);
+            }
+            catch (Exception)
+            {
+                // Compare the raw strings when either path is malformed.
+            }
+
+#if UNITY_EDITOR_LINUX
+            const StringComparison comparison = StringComparison.Ordinal;
+#else
+            const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
+#endif
+            return string.Equals(
+                left.Replace('\\', '/').TrimEnd('/'),
+                right.Replace('\\', '/').TrimEnd('/'),
+                comparison);
         }
 
         private static void InstallWithDialog(string clientName, Func<string> install, string followUp)
@@ -744,7 +945,7 @@ namespace StrangeApe.OpenUnityMcp
             paths.Add(path);
         }
 
-        private static string GetHomeDirectory()
+        internal static string GetHomeDirectory()
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (!string.IsNullOrEmpty(home))

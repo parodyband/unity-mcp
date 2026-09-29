@@ -27,6 +27,11 @@ namespace StrangeApe.OpenUnityMcp
         private static volatile bool _requireToken;
         private static volatile string _accessToken;
 
+        // Reported by /health so a sidecar configured for another project (Claude
+        // Desktop has one global config) reads this project's status file and token.
+        // Application.dataPath is main-thread-only, hence the snapshot.
+        private static volatile string _projectPath;
+
         public static bool IsRunning => _running;
         public static int Port => _port;
         public static string Endpoint => "http://127.0.0.1:" + _port + "/mcp";
@@ -37,6 +42,7 @@ namespace StrangeApe.OpenUnityMcp
             // is served; EditorPrefs is not safe to read from the accept loop.
             var requireToken = OpenUnityMcpSettings.RequireAccessToken;
             var accessToken = OpenUnityMcpSettings.AccessToken;
+            var projectPath = UnityMcpPathUtility.ProjectRoot.Replace('\\', '/');
 
             lock (Gate)
             {
@@ -48,6 +54,7 @@ namespace StrangeApe.OpenUnityMcp
                 _port = port;
                 _requireToken = requireToken;
                 _accessToken = accessToken;
+                _projectPath = projectPath;
                 _listener = new TcpListener(IPAddress.Loopback, port);
                 _listener.Start();
                 _running = true;
@@ -165,7 +172,8 @@ namespace StrangeApe.OpenUnityMcp
                 return new HttpResponse(200, "application/json", McpJson.Stringify(McpJson.Object(
                     "ok", true,
                     "endpoint", Endpoint,
-                    "package", "com.strangeape.open-unity-mcp")));
+                    "package", "com.strangeape.open-unity-mcp",
+                    "projectPath", _projectPath)));
             }
 
             if (request.Path != "/mcp")

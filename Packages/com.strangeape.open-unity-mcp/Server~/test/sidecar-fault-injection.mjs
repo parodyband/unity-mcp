@@ -24,6 +24,15 @@
 //   8. Token rotation: the mock rotates its token and rejects the stale one with a
 //      401; the sidecar silently re-reads the status file and resends once, so the
 //      client sees a normal result (no 401 surfaced).
+//   9. Client notifications are handled in the sidecar, never forwarded.
+//  10. ping is answered immediately while a tools/call waits out an outage.
+//  11. A request cancelled while queued never reaches Unity and gets no response.
+//  12. A request with a progressToken gets heartbeats until its response.
+//  13. A stale 'stopped' status from another project does not abort a reload wait.
+//  14. The sidecar follows the project /health reports (status file and token).
+//  15. Unity not running at startup: initialize and tools/list are answered at
+//      once, and list_changed is emitted when Unity appears.
+//  16. A cold start serves the catalog cached from the live editor.
 //
 // Usage: node test/sidecar-fault-injection.mjs
 
@@ -62,6 +71,12 @@ class MockUnity {
     this.lastAuthHeader = null;
     this.lastXTokenHeader = null;
     this.unauthorizedHits = 0;
+    // Reported by /health like the real editor (null mimics editors before 0.17.0).
+    this.projectPath = null;
+    // Tool names of every tools/call that reached the mock.
+    this.calledTools = [];
+    // Delay applied by 'slowOnce' before answering the next /mcp POST.
+    this.slowMs = 1000;
   }
 
   async start() {
@@ -76,7 +91,7 @@ class MockUnity {
       // Health answers whenever the listener is up. In 'refuse' mode the listener
       // is stopped, so this handler is unreachable — which is the point.
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify(this.projectPath ? { ok: true, projectPath: this.projectPath } : { ok: true }));
       return;
     }
 
@@ -128,9 +143,18 @@ class MockUnity {
         res.writeHead(202); res.end(); return;
       }
 
+      if (msg.method === 'tools/call') this.calledTools.push(msg.params && msg.params.name);
       const result = this._resultFor(msg);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+      const answer = () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }));
+      };
+      if (this.mode === 'slowOnce') {
+        this.mode = 'up';
+        setTimeout(answer, this.slowMs);
+      } else {
+        answer();
+      }
     });
   }
 
@@ -182,12 +206,18 @@ class MockUnity {
 // ---------------------------------------------------------------------------
 
 class Sidecar {
-  constructor(port, project, timeoutMs) {
+  constructor(port, project, timeoutMs, stateDir = path.join(project, 'state')) {
     this.pending = new Map();
     this.notifications = [];
+    this.responses = [];
     this.nextId = 1;
     const args = [SIDECAR, '--port', String(port), '--project', project, '--timeout', String(timeoutMs)];
-    this.child = spawn(process.execPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    // Keep the catalog cache out of the real home directory, and speed up the
+    // progress heartbeat so its scenario runs in well under a second.
+    this.child = spawn(process.execPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, OPEN_UNITY_MCP_STATE_DIR: stateDir, OPEN_UNITY_MCP_PROGRESS_INTERVAL_MS: '200' }
+    });
     createInterface({ input: this.child.stdout }).on('line', (l) => this._onLine(l));
     createInterface({ input: this.child.stderr }).on('line', (l) => process.stderr.write('  sidecar> ' + l + '\n'));
   }
@@ -197,6 +227,7 @@ class Sidecar {
     if (!t) return;
     let m;
     try { m = JSON.parse(t); } catch (e) { process.stderr.write('  !! bad stdout: ' + t + '\n'); return; }
+    if (m.id !== undefined && m.id !== null) this.responses.push(m);
     if (m.id !== undefined && m.id !== null && this.pending.has(m.id)) {
       const p = this.pending.get(m.id); this.pending.delete(m.id); p.resolve({ message: m, ms: Date.now() - p.started });
       return;
@@ -204,16 +235,37 @@ class Sidecar {
     if (m.method && (m.id === undefined || m.id === null)) this.notifications.push(m);
   }
 
-  request(method, params, timeoutMs = 30000) {
+  // Sends a request; returns its id and a promise for the response.
+  send(method, params, timeoutMs = 30000) {
     const id = this.nextId++;
     const body = { jsonrpc: '2.0', id, method };
     if (params !== undefined) body.params = params;
     const started = Date.now();
-    return new Promise((resolve, reject) => {
+    const response = new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('client timeout ' + method)); }, timeoutMs);
       this.pending.set(id, { started, resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
       this.child.stdin.write(JSON.stringify(body) + '\n');
     });
+    return { id, response };
+  }
+
+  request(method, params, timeoutMs = 30000) {
+    return this.send(method, params, timeoutMs).response;
+  }
+
+  notify(method, params) {
+    const body = { jsonrpc: '2.0', method };
+    if (params !== undefined) body.params = params;
+    this.child.stdin.write(JSON.stringify(body) + '\n');
+  }
+
+  async waitForNotification(method, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this.notifications.some((n) => n.method === method)) return true;
+      await sleep(50);
+    }
+    return false;
   }
 
   close() { try { this.child.stdin.end(); } catch (e) {} try { this.child.kill(); } catch (e) {} }
@@ -333,10 +385,145 @@ async function main() {
     // Scenario 6: recovery notification emitted at least once across the run.
     const listChangedNotes = sidecar.notifications.filter((n) => n.method === 'notifications/tools/list_changed').length;
     record('list_changed emitted after recovery', listChangedNotes >= 1, 0, 'count=' + listChangedNotes);
+
+    await mock.comeUp();
+    writeStatus(project, { state: 'running', port: mock.port, token: mock.token, timestamp: Date.now() });
+
+    // Scenario 9: client notifications stay in the sidecar. The editor ignores them,
+    // and forwarding one while Unity is down would hold the queue for the timeout.
+    const hitsPre9 = mock.mcpHits;
+    sidecar.notify('notifications/initialized');
+    await sleep(200);
+    record('client notifications not forwarded', mock.mcpHits === hitsPre9, 0, '/mcp POSTs=' + (mock.mcpHits - hitsPre9));
+
+    // Scenario 10: ping is answered by the sidecar even while a tools/call is
+    // queued waiting out a reload.
+    writeStatus(project, { state: 'reloading', port: mock.port, token: mock.token, timestamp: Date.now() });
+    await mock.goDown();
+    const stuck = sidecar.request('tools/call', { name: 'unity.get_project_info', arguments: {} }, 20000);
+    await sleep(300);
+    const ping = await sidecar.request('ping', {}, 5000);
+    await mock.comeUp();
+    writeStatus(project, { state: 'running', port: mock.port, token: mock.token, timestamp: Date.now() });
+    const unstuck = await stuck;
+    record('ping answered during an outage', isResult(ping.message) && ping.ms < 1000 && isResult(unstuck.message), ping.ms,
+      'ping ' + ping.ms + 'ms while tools/call waited ' + unstuck.ms + 'ms');
+
+    // Scenario 11: a request cancelled while queued behind a slow one never
+    // reaches Unity and gets no response.
+    mock.slowMs = 800;
+    mock.setMode('slowOnce');
+    const slow = sidecar.send('tools/call', { name: 'unity.slow_tool', arguments: {} }, 20000);
+    const doomed = sidecar.send('tools/call', { name: 'unity.cancelled_tool', arguments: {} }, 20000);
+    doomed.response.catch(() => {});
+    await sleep(100);
+    sidecar.notify('notifications/cancelled', { requestId: doomed.id, reason: 'test' });
+    await slow.response;
+    await sleep(400);
+    const doomedAnswered = sidecar.responses.some((m) => m.id === doomed.id);
+    record('cancelled queued request never runs',
+      !mock.calledTools.includes('unity.cancelled_tool') && !doomedAnswered, 0,
+      'reached Unity=' + mock.calledTools.includes('unity.cancelled_tool') + ' answered=' + doomedAnswered);
+
+    // Scenario 12: a request carrying a progressToken gets heartbeats while it is
+    // pending, and none after its response.
+    mock.slowMs = 900;
+    mock.setMode('slowOnce');
+    const withProgress = await sidecar.request('tools/call',
+      { name: 'unity.get_project_info', arguments: {}, _meta: { progressToken: 'heartbeat' } }, 20000);
+    const beatsAtResponse = sidecar.notifications.filter((n) => n.method === 'notifications/progress' && n.params.progressToken === 'heartbeat').length;
+    await sleep(500);
+    const beatsLater = sidecar.notifications.filter((n) => n.method === 'notifications/progress' && n.params.progressToken === 'heartbeat').length;
+    record('progress heartbeat while pending', isResult(withProgress.message) && beatsAtResponse >= 2 && beatsLater === beatsAtResponse,
+      withProgress.ms, 'beats=' + beatsAtResponse + ' after=' + (beatsLater - beatsAtResponse));
   } finally {
     sidecar.close();
+  }
+
+  // Scenario 13: a stale 'stopped' status left by another project must not abort
+  // the wait for the editor this sidecar is talking to (the old code gave up
+  // instantly, so every reload looked like the editor had quit).
+  mock.requireToken = false;
+  mock.projectPath = null;
+  const otherProject = fs.mkdtempSync(path.join(os.tmpdir(), 'oum-sidecar-fi-other-'));
+  writeStatus(otherProject, { state: 'stopped', port: mock.port, timestamp: Date.now() - 60000 });
+  const staleSidecar = new Sidecar(mock.port, otherProject, 8000);
+  try {
+    await staleSidecar.request('tools/call', { name: 'unity.get_project_info', arguments: {} });
+    await mock.goDown();
+    const during = staleSidecar.request('tools/call', { name: 'unity.get_project_info', arguments: {} }, 20000);
+    await sleep(600);
+    await mock.comeUp();
+    const r13 = await during;
+    record('stale stopped status ignored', isResult(r13.message) && !isReloadEnvelope(r13.message), r13.ms,
+      isError(r13.message) ? 'error: ' + r13.message.error.message.slice(0, 60) : 'waited out the outage');
+  } finally {
+    staleSidecar.close();
+  }
+
+  // Scenario 14: the sidecar follows the project /health reports, so it reads that
+  // project's token even though --project names a different one.
+  const liveProject = fs.mkdtempSync(path.join(os.tmpdir(), 'oum-sidecar-fi-live-'));
+  const TOKEN_C = 'c'.repeat(64);
+  writeStatus(liveProject, { state: 'running', port: mock.port, token: TOKEN_C, timestamp: Date.now() });
+  mock.projectPath = liveProject;
+  mock.token = TOKEN_C;
+  mock.requireToken = true;
+  const followSidecar = new Sidecar(mock.port, otherProject, 8000);
+  try {
+    await sleep(300);
+    const r14 = await followSidecar.request('tools/call', { name: 'unity.get_project_info', arguments: {} });
+    record('follows the project /health reports', isResult(r14.message) && mock.lastXTokenHeader === TOKEN_C, r14.ms,
+      'token from live project=' + (mock.lastXTokenHeader === TOKEN_C));
+  } finally {
+    followSidecar.close();
+    mock.requireToken = false;
+    mock.projectPath = null;
+  }
+
+  // Scenario 15: Unity not running when the client starts. The handshake and
+  // tool list are answered at once, and list_changed follows when Unity appears,
+  // instead of the client timing out its handshake and dropping the server.
+  const offlineState = path.join(otherProject, 'offline-state');
+  await mock.goDown();
+  writeStatus(otherProject, { state: 'stopped', port: mock.port, timestamp: Date.now() });
+  const offline = new Sidecar(mock.port, otherProject, 8000, offlineState);
+  try {
+    const init15 = await offline.request('initialize', { protocolVersion: '2025-06-18' }, 5000);
+    const tools15 = await offline.request('tools/list', {}, 5000);
+    const offlineNames = (tools15.message.result?.tools || []).map((t) => t.name);
+    record('offline handshake answered immediately',
+      isResult(init15.message) && init15.message.result.protocolVersion === '2025-06-18' &&
+        init15.message.result.capabilities?.tools?.listChanged === true && init15.ms < 2000 &&
+        isResult(tools15.message) && offlineNames.includes('unity.run_code'),
+      init15.ms, 'tools=' + offlineNames.length + ' (session tools only)');
+
+    await mock.comeUp();
+    const announced = await offline.waitForNotification('notifications/tools/list_changed', 8000);
+    const live15 = await offline.request('tools/list', {}, 5000);
+    const liveNames = (live15.message.result?.tools || []).map((t) => t.name);
+    record('list_changed once Unity appears', announced && liveNames.includes('unity.get_project_info'), 0,
+      'announced=' + announced + ' live tools=' + liveNames.length);
+  } finally {
+    offline.close();
+  }
+
+  // Scenario 16: the next cold start serves the catalog cached from the live
+  // editor, so the client sees the real tools before Unity is even open.
+  await mock.goDown();
+  const cached = new Sidecar(mock.port, otherProject, 8000, offlineState);
+  try {
+    await cached.request('initialize', { protocolVersion: '2025-11-25' }, 5000);
+    const tools16 = await cached.request('tools/list', {}, 5000);
+    const cachedNames = (tools16.message.result?.tools || []).map((t) => t.name);
+    record('cold start serves cached catalog', cachedNames.includes('unity.get_project_info') &&
+      cachedNames.filter((n) => n === 'unity.run_code').length === 1, tools16.ms, 'tools=' + cachedNames.join(','));
+  } finally {
+    cached.close();
     await mock.stop();
-    try { fs.rmSync(project, { recursive: true, force: true }); } catch (e) {}
+    for (const dir of [project, otherProject, liveProject]) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+    }
   }
 
   console.log('');
